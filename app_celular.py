@@ -94,7 +94,7 @@ def carregar_subcategorias(id_categoria):
 
 
 # --- Interface do Aplicativo no Celular ---
-st.title("💳 Lançamento de despesas de Cartão")
+st.title("💳 Lançamento de Cartão")
 st.write("Adicione suas despesas de cartão rapidamente pelo celular.")
 
 cartoes_dict, cartao_principal = carregar_cartoes()
@@ -104,53 +104,49 @@ if not cartoes_dict:
   )
   st.stop()
 
-# Formulário de Lançamento
-with st.form("form_despesa_celular"):
-  # 1. Cartão
-  cartao_selecionado = st.selectbox(
-      "Cartão de Crédito",
-      options=list(cartoes_dict.keys()),
-      index=(
-          list(cartoes_dict.keys()).index(cartao_principal)
-          if cartao_principal in cartoes_dict
-          else 0
-      ),
+# Campos fora do form para permitir a atualização dinâmica da subcategoria
+cartao_selecionado = st.selectbox(
+    "Cartão de Crédito",
+    options=list(cartoes_dict.keys()),
+    index=(
+        list(cartoes_dict.keys()).index(cartao_principal)
+        if cartao_principal in cartoes_dict
+        else 0
+    ),
+)
+
+valor = st.number_input(
+    "Valor da Despesa (R$)", min_value=0.01, format="%.2f", step=10.0
+)
+
+parcelado = st.checkbox("Parcelado")
+qtd_parcelas = 1
+if parcelado:
+  qtd_parcelas = st.selectbox(
+      "Número de vezes", options=list(range(2, 13)), format_func=lambda x: f"{x}x"
   )
 
-  # 2. Valor
-  valor = st.number_input(
-      "Valor da Despesa (R$)", min_value=0.01, format="%.2f", step=10.0
+data_compra = st.date_input("Data da Compra", value=datetime.now().date())
+descricao = st.text_input("Descrição", placeholder="Ex: Supermercado, Uber...")
+
+# Categoria e Subcategoria fora do formulário para recarregarem na hora
+cats_dict = carregar_categorias()
+cat_selecionada = st.selectbox(
+    "Categoria", options=list(cats_dict.keys()) if cats_dict else []
+)
+
+id_cat = cats_dict.get(cat_selecionada) if cat_selecionada else None
+subs_dict = carregar_subcategorias(id_cat)
+sub_selecionada = st.selectbox(
+    "Subcategoria", options=list(subs_dict.keys()) if subs_dict else []
+)
+id_sub = subs_dict.get(sub_selecionada) if sub_selecionada else None
+
+# Formulário apenas para o botão de envio (evita recargas indesejadas e envia os dados limpos)
+with st.form("form_envio_despesa"):
+  enviar = st.form_submit_button(
+      "Cadastrar Despesa", use_container_width=True
   )
-
-  # 3. Parcelamento
-  parcelado = st.checkbox("Parcelado")
-  qtd_parcelas = 1
-  if parcelado:
-    qtd_parcelas = st.selectbox(
-        "Número de vezes", options=list(range(2, 13)), format_func=lambda x: f"{x}x"
-    )
-
-  # 4. Data da Compra
-  data_compra = st.date_input("Data da Compra", value=datetime.now().date())
-
-  # 5. Descrição
-  descricao = st.text_input("Descrição", placeholder="Ex: Supermercado, Uber...")
-
-  # 6. Categoria e Subcategoria
-  cats_dict = carregar_categorias()
-  cat_selecionada = st.selectbox(
-      "Categoria", options=list(cats_dict.keys()) if cats_dict else []
-  )
-
-  id_cat = cats_dict.get(cat_selecionada) if cat_selecionada else None
-  subs_dict = carregar_subcategorias(id_cat)
-  sub_selecionada = st.selectbox(
-      "Subcategoria", options=list(subs_dict.keys()) if subs_dict else []
-  )
-  id_sub = subs_dict.get(sub_selecionada) if sub_selecionada else None
-
-  # Botão de Envio
-  enviar = st.form_submit_button("Cadastrar Despesa", use_container_width=True)
 
   if enviar:
     if not descricao.strip():
