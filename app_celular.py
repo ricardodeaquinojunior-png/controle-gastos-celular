@@ -94,7 +94,7 @@ def carregar_subcategorias(id_categoria):
 
 
 # --- Interface do Aplicativo no Celular ---
-st.title("💳 Lançamento de Cartão")
+st.title("💳 Lançamento de despesas de Cartão")
 st.write("Adicione suas despesas de cartão rapidamente pelo celular.")
 
 cartoes_dict, cartao_principal = carregar_cartoes()
