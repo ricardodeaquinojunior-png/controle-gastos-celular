@@ -5,11 +5,11 @@ import streamlit as st
 
 # Configuração da página para dispositivos móveis
 st.set_page_config(
-    page_title="Lançamento de Cartão", page_icon="💳", layout="centered"
+    page_title="Controle Financeiro", page_icon="💰", layout="centered"
 )
 
 
-# Função de conexão inteligente (funciona localmente e na nuvem via Pooler)
+# Função de conexão inteligente (Pooler)
 def conectar_banco():
   if "supabase" in st.secrets:
     db_conf = st.secrets["supabase"]
@@ -21,7 +21,6 @@ def conectar_banco():
         port=db_conf["port"],
     )
   else:
-    # Conexão de fallback para testes locais no VS Code
     return psycopg2.connect(
         host="aws-0-us-east-1.pooler.supabase.com",
         database="postgres",
@@ -31,7 +30,7 @@ def conectar_banco():
     )
 
 
-# Funções para buscar dados do banco
+# --- Funções de Consulta ao Banco ---
 def carregar_cartoes():
   try:
     conn = conectar_banco()
@@ -93,117 +92,181 @@ def carregar_subcategorias(id_categoria):
     return {}
 
 
-# --- Interface do Aplicativo no Celular ---
-st.title("💳 Lançamento de Cartão")
-st.write("Adicione suas despesas de cartão rapidamente pelo celular.")
+def obter_resumo_mes():
+  """Busca o total de receitas e despesas do mês atual"""
+  try:
+    conn = conectar_banco()
+    cursor = conn.cursor()
+    # Pega o ano e mês atuais
+    ano_mes_atual = datetime.now().strftime("%Y-%m")
 
-cartoes_dict, cartao_principal = carregar_cartoes()
-if not cartoes_dict:
-  st.warning(
-      "Nenhum cartão encontrado. Verifique sua conexão ou tabela de cartões."
+    cursor.execute(
+        """
+            SELECT tipo, SUM(valor) 
+            FROM lancamentos 
+            WHERE TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+            GROUP BY tipo;
+        """,
+        (ano_mes_atual,),
+    )
+    res = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    totais = {"Receita": 0.0, "Despesa": 0.0}
+    for tipo, valor in res:
+      if tipo in totais:
+        totais[tipo] = float(valor)
+    return totais
+  except Exception:
+    return {"Receita": 0.0, "Despesa": 0.0}
+
+
+# --- Menu de Navegação Superior (Estilo App) ---
+st.title("💰 Meu Controle")
+
+menu = st.radio(
+    "Navegação", ["📊 Resumo do Mês", "💳 Lançar Cartão"], horizontal=True
+)
+st.divider()
+
+# ==========================================
+# ABA 1: RESUMO / DASHBOARD (TELA INICIAL)
+# ==========================================
+if menu == "📊 Resumo do Mês":
+  st.subheader("📅 Resumo de " + datetime.now().strftime("%B / %Y"))
+
+  resumo = obter_resumo_mes()
+  receitas = resumo.get("Receita", 0.0)
+  despesas = resumo.get("Despesa", 0.0)
+  saldo = receitas - despesas
+
+  # Cards de Resumo estilo Bancário
+  col1, col2 = st.columns(2)
+  with col1:
+    st.metric(label="🟢 Receitas", value=f"R$ {receitas:,.2f}")
+  with col2:
+    st.metric(label="🔴 Despesas", value=f"R$ {despesas:,.2f}")
+
+  st.metric(
+      label="💼 Saldo do Mês",
+      value=f"R$ {saldo:,.2f}",
+      delta=f"R$ {saldo:,.2f}",
   )
-  st.stop()
 
-# Campos fora do form para permitir a atualização dinâmica da subcategoria
-cartao_selecionado = st.selectbox(
-    "Cartão de Crédito",
-    options=list(cartoes_dict.keys()),
-    index=(
-        list(cartoes_dict.keys()).index(cartao_principal)
-        if cartao_principal in cartoes_dict
-        else 0
-    ),
-)
-
-valor = st.number_input(
-    "Valor da Despesa (R$)", min_value=0.01, format="%.2f", step=10.0
-)
-
-parcelado = st.checkbox("Parcelado")
-qtd_parcelas = 1
-if parcelado:
-  qtd_parcelas = st.selectbox(
-      "Número de vezes", options=list(range(2, 13)), format_func=lambda x: f"{x}x"
+  st.info(
+      "Dica: Use a aba 'Lançar Cartão' acima para registrar novas despesas de"
+      " forma rápida."
   )
 
-data_compra = st.date_input("Data da Compra", value=datetime.now().date())
-descricao = st.text_input("Descrição", placeholder="Ex: Supermercado, Uber...")
+# ==========================================
+# ABA 2: LANÇAMENTO DE CARTÃO
+# ==========================================
+elif menu == "💳 Lançar Cartão":
+  st.subheader("💳 Lançamento de Cartão")
+  st.write("Adicione suas despesas de cartão rapidamente.")
 
-# Categoria e Subcategoria fora do formulário para recarregarem na hora
-cats_dict = carregar_categorias()
-cat_selecionada = st.selectbox(
-    "Categoria", options=list(cats_dict.keys()) if cats_dict else []
-)
+  cartoes_dict, cartao_principal = carregar_cartoes()
+  if not cartoes_dict:
+    st.warning("Nenhum cartão encontrado. Verifique sua tabela de cartões.")
+    st.stop()
 
-id_cat = cats_dict.get(cat_selecionada) if cat_selecionada else None
-subs_dict = carregar_subcategorias(id_cat)
-sub_selecionada = st.selectbox(
-    "Subcategoria", options=list(subs_dict.keys()) if subs_dict else []
-)
-id_sub = subs_dict.get(sub_selecionada) if sub_selecionada else None
-
-# Formulário apenas para o botão de envio (evita recargas indesejadas e envia os dados limpos)
-with st.form("form_envio_despesa"):
-  enviar = st.form_submit_button(
-      "Cadastrar Despesa", use_container_width=True
+  cartao_selecionado = st.selectbox(
+      "Cartão de Crédito",
+      options=list(cartoes_dict.keys()),
+      index=(
+          list(cartoes_dict.keys()).index(cartao_principal)
+          if cartao_principal in cartoes_dict
+          else 0
+      ),
   )
 
-  if enviar:
-    if not descricao.strip():
-      st.error("Por favor, preencha a descrição da despesa.")
-    elif not cat_selecionada:
-      st.error("Selecione uma categoria.")
-    else:
-      try:
-        id_cartao = cartoes_dict[cartao_selecionado]
-        conn = conectar_banco()
-        cursor = conn.cursor()
+  valor = st.number_input(
+      "Valor da Despesa (R$)", min_value=0.01, format="%.2f", step=10.0
+  )
 
-        desc_base = descricao.strip()
+  parcelado = st.checkbox("Parcelado")
+  qtd_parcelas = 1
+  if parcelado:
+    qtd_parcelas = st.selectbox(
+        "Número de vezes", options=list(range(2, 13)), format_func=lambda x: f"{x}x"
+    )
 
-        if parcelado:
-          valor_parcela = valor / qtd_parcelas
-          for i in range(qtd_parcelas):
-            data_parcela = data_compra + relativedelta(months=i)
-            desc_parcela = f"{desc_base} ({i+1}/{qtd_parcelas})"
+  data_compra = st.date_input("Data da Compra", value=datetime.now().date())
+  descricao = st.text_input("Descrição", placeholder="Ex: Supermercado, Uber...")
+
+  cats_dict = carregar_categorias()
+  cat_selecionada = st.selectbox(
+      "Categoria", options=list(cats_dict.keys()) if cats_dict else []
+  )
+
+  id_cat = cats_dict.get(cat_selecionada) if cat_selecionada else None
+  subs_dict = carregar_subcategorias(id_cat)
+  sub_selecionada = st.selectbox(
+      "Subcategoria", options=list(subs_dict.keys()) if subs_dict else []
+  )
+  id_sub = subs_dict.get(sub_selecionada) if sub_selecionada else None
+
+  with st.form("form_envio_despesa"):
+    enviar = st.form_submit_button(
+        "Cadastrar Despesa", use_container_width=True
+    )
+
+    if enviar:
+      if not descricao.strip():
+        st.error("Por favor, preencha a descrição da despesa.")
+      elif not cat_selecionada:
+        st.error("Selecione uma categoria.")
+      else:
+        try:
+          id_cartao = cartoes_dict[cartao_selecionado]
+          conn = conectar_banco()
+          cursor = conn.cursor()
+          desc_base = descricao.strip()
+
+          if parcelado:
+            valor_parcela = valor / qtd_parcelas
+            for i in range(qtd_parcelas):
+              data_parcela = data_compra + relativedelta(months=i)
+              desc_parcela = f"{desc_base} ({i+1}/{qtd_parcelas})"
+              cursor.execute(
+                  """
+                              INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
+                              VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
+                          """,
+                  (
+                      valor_parcela,
+                      data_parcela.strftime("%Y-%m-%d"),
+                      desc_parcela,
+                      id_cat,
+                      id_sub,
+                      id_cartao,
+                      qtd_parcelas,
+                  ),
+              )
+            st.success(
+                f"Despesa parcelada em {qtd_parcelas}x cadastrada com sucesso!"
+            )
+          else:
             cursor.execute(
                 """
-                            INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
-                            VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
-                        """,
+                          INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
+                          VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
+                      """,
                 (
-                    valor_parcela,
-                    data_parcela.strftime("%Y-%m-%d"),
-                    desc_parcela,
+                    valor,
+                    data_compra.strftime("%Y-%m-%d"),
+                    desc_base,
                     id_cat,
                     id_sub,
                     id_cartao,
-                    qtd_parcelas,
+                    1,
                 ),
             )
-          st.success(
-              f"Despesa parcelada em {qtd_parcelas}x cadastrada com sucesso!"
-          )
-        else:
-          cursor.execute(
-              """
-                        INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
-                        VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
-                    """,
-              (
-                  valor,
-                  data_compra.strftime("%Y-%m-%d"),
-                  desc_base,
-                  id_cat,
-                  id_sub,
-                  id_cartao,
-                  1,
-              ),
-          )
-          st.success("Despesa de cartão cadastrada com sucesso!")
+            st.success("Despesa de cartão cadastrada com sucesso!")
 
-        conn.commit()
-        cursor.close()
-        conn.close()
-      except Exception as ex:
-        st.error(f"Erro ao salvar no banco de dados: {ex}")
+          conn.commit()
+          cursor.close()
+          conn.close()
+        except Exception as ex:
+          st.error(f"Erro ao salvar no banco de dados: {ex}")
