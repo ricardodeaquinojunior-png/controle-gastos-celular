@@ -48,30 +48,34 @@ def conectar_banco():
     )
 
 
-# --- Funções de Consulta ao Banco ---
+# --- Funções de Consulta ao Banco com Segurança de Índices ---
 def carregar_cartoes():
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
-    try:
-      cursor.execute(
-          "SELECT id, nome, dia_fechamento, principal FROM cartoes ORDER BY"
-          " nome;"
-      )
-      res = cursor.fetchall()
-      cartoes = {row[1]: {"id": str(row[0]), "fechamento": row[2] or 24} for row in res}
-      principal = next(
-          (row[1] for row in res if len(row) > 3 and row[3]),
-          list(cartoes.keys())[0] if cartoes else None,
-      )
-    except Exception:
-      conn.rollback()
-      cursor.execute("SELECT id, nome, dia_fechamento FROM cartoes ORDER BY nome;")
-      res = cursor.fetchall()
-      cartoes = {row[1]: {"id": str(row[0]), "fechamento": row[2] or 24} for row in res}
-      principal = list(cartoes.keys())[0] if cartoes else None
+    cursor.execute(
+        "SELECT id, nome, dia_fechamento, principal FROM cartoes ORDER BY nome;"
+    )
+    res = cursor.fetchall()
     cursor.close()
     conn.close()
+
+    cartoes = {}
+    principal = None
+    for row in res:
+      if len(row) >= 2:
+        cid = str(row[0])
+        cnome = row[1]
+        fechamento = row[2] if len(row) > 2 and row[2] is not None else 24
+        is_principal = row[3] if len(row) > 3 and row[3] is not None else False
+
+        cartoes[cnome] = {"id": cid, "fechamento": fechamento}
+        if is_principal:
+          principal = cnome
+
+    if not principal and cartoes:
+      principal = list(cartoes.keys())[0]
+
     return cartoes, principal
   except Exception as e:
     st.error(f"Erro ao carregar cartões: {e}")
@@ -84,9 +88,13 @@ def carregar_categorias():
     cursor = conn.cursor()
     cursor.execute("SELECT id_categoria, descricao FROM categorias ORDER BY descricao;")
     res = cursor.fetchall()
-    cats = {row[1]: str(row[0]) for row in res}
     cursor.close()
     conn.close()
+
+    cats = {}
+    for row in res:
+      if len(row) >= 2:
+        cats[row[1]] = str(row[0])
     return cats
   except Exception as e:
     st.error(f"Erro ao carregar categorias: {e}")
@@ -104,9 +112,13 @@ def carregar_subcategorias(id_categoria):
         (id_categoria,),
     )
     res = cursor.fetchall()
-    subs = {row[1]: str(row[0]) for row in res}
     cursor.close()
     conn.close()
+
+    subs = {}
+    for row in res:
+      if len(row) >= 2:
+        subs[row[1]] = str(row[0])
     return subs
   except Exception as e:
     st.error(f"Erro ao carregar subcategorias: {e}")
@@ -115,7 +127,8 @@ def carregar_subcategorias(id_categoria):
 
 def obter_resumo_mes(ano_mes):
   try:
-    ano, mes = map(int, ano_mes.split("-"))
+    partes = ano_mes.split("-")
+    ano, mes = int(partes[0]), int(partes[1])
     primeiro_dia = date(ano, mes, 1)
     ultimo_dia = date(ano, mes, calendar.monthrange(ano, mes)[1])
 
@@ -138,10 +151,14 @@ def obter_resumo_mes(ano_mes):
     conn.close()
 
     totais = {"Receita": 0.0, "Despesa": 0.0}
-    for tipo, valor in res:
-      tipo_str = str(tipo).strip().capitalize()
-      if tipo_str in totais:
-        totais[tipo_str] = float(valor)
+    if res:
+      for row in res:
+        if len(row) >= 2:
+          tipo = row[0]
+          valor = row[1]
+          tipo_str = str(tipo).strip().capitalize()
+          if tipo_str in totais and valor is not None:
+            totais[tipo_str] = float(valor)
     return totais
   except Exception as e:
     st.error(f"Erro no resumo do mês: {e}")
@@ -150,7 +167,8 @@ def obter_resumo_mes(ano_mes):
 
 def obter_lancamentos_mes(tipo, ano_mes):
   try:
-    ano, mes = map(int, ano_mes.split("-"))
+    partes = ano_mes.split("-")
+    ano, mes = int(partes[0]), int(partes[1])
     primeiro_dia = date(ano, mes, 1)
     ultimo_dia = date(ano, mes, calendar.monthrange(ano, mes)[1])
 
@@ -314,25 +332,28 @@ if menu == "📊 Resumo do Mês":
       conn.close()
 
       faturas_por_cartao = {}
-      for val, ldata, ldesc, c_nome, c_fech in todos_lanc_cartoes:
-        if not ldata:
-          continue
-        d_date = ldata.date() if hasattr(ldata, "date") else ldata
-        fechamento = c_fech or 24
+      if todos_lanc_cartoes:
+        for row in todos_lanc_cartoes:
+          if len(row) >= 5:
+            val, ldata, ldesc, c_nome, c_fech = row[0], row[1], row[2], row[3], row[4]
+            if not ldata:
+              continue
+            d_date = ldata.date() if hasattr(ldata, "date") else ldata
+            fechamento = c_fech or 24
 
-        inicio_ciclo, fim_ciclo = calcular_ciclo_fatura(d_date, fechamento)
-        ciclo_ano_mes = fim_ciclo.strftime("%Y-%m")
+            inicio_ciclo, fim_ciclo = calcular_ciclo_fatura(d_date, fechamento)
+            ciclo_ano_mes = fim_ciclo.strftime("%Y-%m")
 
-        if ciclo_ano_mes == mes_selecionado:
-          if c_nome not in faturas_por_cartao:
-            faturas_por_cartao[c_nome] = {
-                "total": 0.0,
-                "inicio": inicio_ciclo,
-                "fim": fim_ciclo,
-                "itens": [],
-            }
-          faturas_por_cartao[c_nome]["total"] += float(val or 0)
-          faturas_por_cartao[c_nome]["itens"].append((ldata, ldesc, val))
+            if ciclo_ano_mes == mes_selecionado:
+              if c_nome not in faturas_por_cartao:
+                faturas_por_cartao[c_nome] = {
+                    "total": 0.0,
+                    "inicio": inicio_ciclo,
+                    "fim": fim_ciclo,
+                    "itens": [],
+                }
+              faturas_por_cartao[c_nome]["total"] += float(val or 0)
+              faturas_por_cartao[c_nome]["itens"].append((ldata, ldesc, val))
 
       if faturas_por_cartao:
         for c_nome, info in faturas_por_cartao.items():
