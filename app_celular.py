@@ -48,7 +48,7 @@ def conectar_banco():
     )
 
 
-# --- Funções de Consulta ao Banco com Segurança de Índices ---
+# --- Funções de Consulta ao Banco (Com Segurança Total) ---
 def carregar_cartoes():
   try:
     conn = conectar_banco()
@@ -62,16 +62,17 @@ def carregar_cartoes():
 
     cartoes = {}
     principal = None
-    for row in res:
-      if len(row) >= 2:
-        cid = str(row[0])
-        cnome = row[1]
-        fechamento = row[2] if len(row) > 2 and row[2] is not None else 24
-        is_principal = row[3] if len(row) > 3 and row[3] is not None else False
+    if res:
+      for row in res:
+        if row and len(row) >= 2:
+          cid = str(row[0])
+          cnome = row[1]
+          fechamento = row[2] if len(row) > 2 and row[2] is not None else 24
+          is_principal = row[3] if len(row) > 3 and row[3] is not None else False
 
-        cartoes[cnome] = {"id": cid, "fechamento": fechamento}
-        if is_principal:
-          principal = cnome
+          cartoes[cnome] = {"id": cid, "fechamento": fechamento}
+          if is_principal:
+            principal = cnome
 
     if not principal and cartoes:
       principal = list(cartoes.keys())[0]
@@ -92,9 +93,10 @@ def carregar_categorias():
     conn.close()
 
     cats = {}
-    for row in res:
-      if len(row) >= 2:
-        cats[row[1]] = str(row[0])
+    if res:
+      for row in res:
+        if row and len(row) >= 2:
+          cats[row[1]] = str(row[0])
     return cats
   except Exception as e:
     st.error(f"Erro ao carregar categorias: {e}")
@@ -116,9 +118,10 @@ def carregar_subcategorias(id_categoria):
     conn.close()
 
     subs = {}
-    for row in res:
-      if len(row) >= 2:
-        subs[row[1]] = str(row[0])
+    if res:
+      for row in res:
+        if row and len(row) >= 2:
+          subs[row[1]] = str(row[0])
     return subs
   except Exception as e:
     st.error(f"Erro ao carregar subcategorias: {e}")
@@ -127,6 +130,8 @@ def carregar_subcategorias(id_categoria):
 
 def obter_resumo_mes(ano_mes):
   try:
+    if not isinstance(ano_mes, str) or "-" not in ano_mes:
+      ano_mes = datetime.now().strftime("%Y-%m")
     partes = ano_mes.split("-")
     ano, mes = int(partes[0]), int(partes[1])
     primeiro_dia = date(ano, mes, 1)
@@ -153,12 +158,13 @@ def obter_resumo_mes(ano_mes):
     totais = {"Receita": 0.0, "Despesa": 0.0}
     if res:
       for row in res:
-        if len(row) >= 2:
+        if row and len(row) >= 2:
           tipo = row[0]
           valor = row[1]
-          tipo_str = str(tipo).strip().capitalize()
-          if tipo_str in totais and valor is not None:
-            totais[tipo_str] = float(valor)
+          if tipo is not None:
+            tipo_str = str(tipo).strip().capitalize()
+            if tipo_str in totais and valor is not None:
+              totais[tipo_str] = float(valor)
     return totais
   except Exception as e:
     st.error(f"Erro no resumo do mês: {e}")
@@ -167,6 +173,8 @@ def obter_resumo_mes(ano_mes):
 
 def obter_lancamentos_mes(tipo, ano_mes):
   try:
+    if not isinstance(ano_mes, str) or "-" not in ano_mes:
+      ano_mes = datetime.now().strftime("%Y-%m")
     partes = ano_mes.split("-")
     ano, mes = int(partes[0]), int(partes[1])
     primeiro_dia = date(ano, mes, 1)
@@ -245,8 +253,10 @@ if menu == "📊 Resumo do Mês":
 
 
   def formatar_mes_pt(ano_mes):
+    if not isinstance(ano_mes, str) or "-" not in ano_mes:
+      return ano_mes
     ano, mes = ano_mes.split("-")
-    return f"{meses_pt[mes]} de {ano}"
+    return f"{meses_pt.get(mes, mes)} de {ano}"
 
 
   mes_atual_str = hoje.strftime("%Y-%m")
@@ -287,26 +297,30 @@ if menu == "📊 Resumo do Mês":
   with st.expander("🔍 Ver detalhes das Receitas"):
     lista_receitas = obter_lancamentos_mes("Receita", mes_selecionado)
     if lista_receitas:
-      for data, desc, val in lista_receitas:
-        data_fmt = (
-            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
-            if data
-            else ""
-        )
-        st.markdown(f"**{data_fmt}** - {desc}: `R$ {val:,.2f}`")
+      for row in lista_receitas:
+        if row and len(row) >= 3:
+          data, desc, val = row[0], row[1], row[2]
+          data_fmt = (
+              datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
+              if data
+              else ""
+          )
+          st.markdown(f"**{data_fmt}** - {desc}: `R$ {float(val or 0):,.2f}`")
     else:
       st.info("Nenhuma receita registrada neste período.")
 
   with st.expander("🔍 Ver detalhes das Despesas"):
     lista_despesas = obter_lancamentos_mes("Despesa", mes_selecionado)
     if lista_despesas:
-      for data, desc, val in lista_despesas:
-        data_fmt = (
-            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
-            if data
-            else ""
-        )
-        st.markdown(f"**{data_fmt}** - {desc}: `R$ {val:,.2f}`")
+      for row in lista_despesas:
+        if row and len(row) >= 3:
+          data, desc, val = row[0], row[1], row[2]
+          data_fmt = (
+              datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
+              if data
+              else ""
+          )
+          st.markdown(f"**{data_fmt}** - {desc}: `R$ {float(val or 0):,.2f}`")
     else:
       st.info("Nenhuma despesa registrada neste período.")
 
@@ -334,7 +348,7 @@ if menu == "📊 Resumo do Mês":
       faturas_por_cartao = {}
       if todos_lanc_cartoes:
         for row in todos_lanc_cartoes:
-          if len(row) >= 5:
+          if row and len(row) >= 5:
             val, ldata, ldesc, c_nome, c_fech = row[0], row[1], row[2], row[3], row[4]
             if not ldata:
               continue
