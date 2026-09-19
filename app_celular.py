@@ -156,21 +156,21 @@ if menu == "📊 Resumo do Mês":
   )
 
 # ==========================================
-# ABA 2: NOVA DESPESA CARTÃO (Estilo Limpo)
+# ABA 2: NOVA DESPESA CARTÃO
 # ==========================================
 elif menu == "💳 Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
-  # 1. Campo de Valor em destaque no topo
+  # 1. Campo de Valor ajustado (sem valor inicial abaixo do min_value)
   valor = st.number_input(
       "Valor da despesa cartão (R$)",
       min_value=0.01,
       format="%.2f",
       step=10.0,
-      value=0.00,
+      value=0.01,
   )
 
-  # 2. Atalhos de Data rápidos (Hoje / Ontem)
+  # 2. Atalhos de Data rápidos
   col_d1, col_d2, col_d3 = st.columns(3)
   with col_d1:
     btn_hoje = st.button("📅 Hoje", use_container_width=True)
@@ -179,7 +179,6 @@ elif menu == "💳 Nova Despesa":
   with col_d3:
     btn_outro = st.button("🗓️ Outra", use_container_width=True)
 
-  # Controla a data selecionada baseada nos botões ou no seletor
   if "data_compra" not in st.session_state:
     st.session_state.data_compra = datetime.now().date()
 
@@ -234,7 +233,7 @@ elif menu == "💳 Nova Despesa":
 
   st.divider()
 
-  # Botão de Ação Principal (Estilo Concluir)
+  # Botão de Ação Principal
   if st.button("✔ Cadastrar Despesa", type="primary", use_container_width=True):
     if not descricao.strip():
       st.error("Por favor, preencha a descrição da despesa.")
