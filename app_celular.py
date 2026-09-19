@@ -10,15 +10,26 @@ st.set_page_config(
 
 
 # Função de conexão reutilizando a sua estrutura
+# Função de conexão inteligente (funciona local e na nuvem do Streamlit)
 def conectar_banco():
-  return psycopg2.connect(
-      host="db.vihsucqqzeaestnynffz.supabase.co",
-      database="postgres",
-      user="postgres",
-      password=r"gPAc6c9P+_ZV2u$",
-      port=5432,
-  )
-
+  if "supabase" in st.secrets:
+    db_conf = st.secrets["supabase"]
+    return psycopg2.connect(
+        host=db_conf["host"],
+        database=db_conf["database"],
+        user=db_conf["user"],
+        password=db_conf["password"],
+        port=db_conf["port"],
+    )
+  else:
+    # Conexão local de fallback para testes no VS Code
+    return psycopg2.connect(
+        host="db.vihsucqqzeaestnynffz.supabase.co",
+        database="postgres",
+        user="postgres",
+        password=r"gPAc6c9P+_ZV2u$",
+        port=5432,
+    )
 
 # Funções para buscar dados do banco
 def carregar_cartoes():
