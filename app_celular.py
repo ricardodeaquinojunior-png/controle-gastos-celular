@@ -115,18 +115,24 @@ def carregar_subcategorias(id_categoria):
 
 def obter_resumo_mes(ano_mes):
   try:
+    ano, mes = map(int, ano_mes.split("-"))
+    primeiro_dia = date(ano, mes, 1)
+    ultimo_dia = date(
+        ano, mes, calendar.monthrange(ano, mes)[1]
+    )  # último dia do mês
+
     conn = conectar_banco()
     cursor = conn.cursor()
     cursor.execute(
         """
             SELECT tipo, SUM(valor) 
             FROM lancamentos 
-            WHERE TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+            WHERE data_lancamento >= %s AND data_lancamento <= %s 
               AND tipo != 'Transferência'
               AND LOWER(descricao) NOT LIKE 'transf%'
             GROUP BY tipo;
         """,
-        (ano_mes,),
+        (primeiro_dia, ultimo_dia),
     )
     res = cursor.fetchall()
     cursor.close()
@@ -137,15 +143,20 @@ def obter_resumo_mes(ano_mes):
       if tipo in totais:
         totais[tipo] = float(valor)
     return totais
-  except Exception:
+  except Exception as e:
+    print(f"Erro no resumo: {e}")
     return {"Receita": 0.0, "Despesa": 0.0}
 
 
 def obter_lancamentos_mes(tipo, ano_mes):
   try:
+    ano, mes = map(int, ano_mes.split("-"))
+    primeiro_dia = date(ano, mes, 1)
+    ultimo_dia = date(ano, mes, calendar.monthrange(ano, mes)[1])
+
     conn = conectar_banco()
     cursor = conn.cursor()
-    
+
     if tipo == "Receita":
       cursor.execute(
           """
@@ -154,27 +165,29 @@ def obter_lancamentos_mes(tipo, ano_mes):
               WHERE tipo = %s 
                 AND tipo != 'Transferência'
                 AND LOWER(descricao) NOT LIKE 'transf%'
-                AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+                AND data_lancamento >= %s AND data_lancamento <= %s 
               ORDER BY data_lancamento DESC;
           """,
-          (tipo, ano_mes),
+          (tipo, primeiro_dia, ultimo_dia),
       )
     else:
       cursor.execute(
           """
               SELECT data_lancamento, descricao, valor 
               FROM lancamentos 
-              WHERE tipo = %s AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+              WHERE tipo = %s 
+                AND data_lancamento >= %s AND data_lancamento <= %s 
               ORDER BY data_lancamento DESC;
           """,
-          (tipo, ano_mes),
+          (tipo, primeiro_dia, ultimo_dia),
       )
 
     res = cursor.fetchall()
     cursor.close()
     conn.close()
     return res
-  except Exception:
+  except Exception as e:
+    print(f"Erro nos lançamentos: {e}")
     return []
 
 
@@ -207,8 +220,6 @@ st.divider()
 if menu == "📊 Resumo do Mês":
   hoje = datetime.now()
   lista_meses_opcoes = []
-  
-  # Cria uma lista de meses (3 meses para trás, o mês atual e 3 para a frente)
   for i in range(-3, 4):
     m_ref = hoje + relativedelta(months=i)
     lista_meses_opcoes.append(m_ref.strftime("%Y-%m"))
@@ -219,7 +230,6 @@ if menu == "📊 Resumo do Mês":
     return f"{meses_pt[mes]} de {ano}"
 
 
-  # Garante que o mês atual (índice 3 nesta lista menor) venha selecionado por defeito
   mes_atual_str = hoje.strftime("%Y-%m")
   indice_atual = (
       lista_meses_opcoes.index(mes_atual_str)
