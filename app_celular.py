@@ -117,7 +117,6 @@ def obter_resumo_mes(ano_mes):
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
-    # Exclui qualquer registro cujo tipo ou descrição contenha 'transf' ou 'transferência'
     cursor.execute(
         """
             SELECT tipo, SUM(valor) 
@@ -148,7 +147,6 @@ def obter_lancamentos_mes(tipo, ano_mes):
     cursor = conn.cursor()
     
     if tipo == "Receita":
-      # Filtro rígido para impedir que transferências apareçam nas receitas
       cursor.execute(
           """
               SELECT data_lancamento, descricao, valor 
@@ -209,7 +207,9 @@ st.divider()
 if menu == "📊 Resumo do Mês":
   hoje = datetime.now()
   lista_meses_opcoes = []
-  for i in range(-6, 7):
+  
+  # Cria uma lista de meses (3 meses para trás, o mês atual e 3 para a frente)
+  for i in range(-3, 4):
     m_ref = hoje + relativedelta(months=i)
     lista_meses_opcoes.append(m_ref.strftime("%Y-%m"))
 
@@ -219,10 +219,18 @@ if menu == "📊 Resumo do Mês":
     return f"{meses_pt[mes]} de {ano}"
 
 
+  # Garante que o mês atual (índice 3 nesta lista menor) venha selecionado por defeito
+  mes_atual_str = hoje.strftime("%Y-%m")
+  indice_atual = (
+      lista_meses_opcoes.index(mes_atual_str)
+      if mes_atual_str in lista_meses_opcoes
+      else 3
+  )
+
   mes_selecionado = st.selectbox(
       "📅 Selecionar Período (Mês)",
       options=lista_meses_opcoes,
-      index=6,
+      index=indice_atual,
       format_func=formatar_mes_pt,
   )
 
@@ -370,7 +378,6 @@ elif menu == "💳 Nova Despesa":
       value=0.01,
   )
 
-  # Gerenciamento de Data via campo de texto DD/MM/AAAA
   if "str_data_compra" not in st.session_state:
     st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
 
