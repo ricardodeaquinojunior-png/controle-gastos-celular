@@ -365,13 +365,19 @@ elif menu == "💳 Nova Despesa":
       )
   with col_d3:
     if st.button("🗓️ Outra", use_container_width=True):
-      pass  # Mantém visível para o calendário abaixo
+      pass
 
-  # Calendário interativo nativo do Streamlit para escolha precisa
+  # Calendário interativo nativo do Streamlit
   data_compra = st.date_input(
       "Data da Compra", value=st.session_state.data_compra_state
   )
   st.session_state.data_compra_state = data_compra
+
+  # Exibição clara da data selecionada rigorosamente no formato DD/MM/AAAA
+  st.caption(
+      f"📅 Data selecionada para cadastro:"
+      f" **{data_compra.strftime('%d/%m/%Y')}**"
+  )
 
   descricao = st.text_input("📝 Descrição", placeholder="Ex: Supermercado, Uber...")
 
