@@ -350,35 +350,28 @@ elif menu == "💳 Nova Despesa":
       value=0.01,
   )
 
-  # Gerenciamento da Data (DD/MM/AAAA)
-  if "str_data_compra" not in st.session_state:
-    st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
+  # Gerenciamento de Data com Calendário Nativo
+  if "data_compra_state" not in st.session_state:
+    st.session_state.data_compra_state = datetime.now().date()
 
   col_d1, col_d2, col_d3 = st.columns(3)
   with col_d1:
     if st.button("📅 Hoje", use_container_width=True):
-      st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
+      st.session_state.data_compra_state = datetime.now().date()
   with col_d2:
     if st.button("↩️ Ontem", use_container_width=True):
-      ontem = datetime.now().date() - timedelta(days=1)
-      st.session_state.str_data_compra = ontem.strftime("%d/%m/%Y")
+      st.session_state.data_compra_state = datetime.now().date() - timedelta(
+          days=1
+      )
   with col_d3:
     if st.button("🗓️ Outra", use_container_width=True):
-      pass
+      pass  # Mantém visível para o calendário abaixo
 
-  str_data_digitada = st.text_input(
-      "Data da Compra (DD/MM/AAAA)",
-      value=st.session_state.str_data_compra,
-      max_chars=10,
-      placeholder="DD/MM/AAAA",
+  # Calendário interativo nativo do Streamlit para escolha precisa
+  data_compra = st.date_input(
+      "Data da Compra", value=st.session_state.data_compra_state
   )
-  st.session_state.str_data_compra = str_data_digitada
-
-  try:
-    data_compra = datetime.strptime(str_data_digitada, "%d/%m/%Y").date()
-  except ValueError:
-    st.error("Formato de data inválido! Use o padrão DD/MM/AAAA.")
-    data_compra = None
+  st.session_state.data_compra_state = data_compra
 
   descricao = st.text_input("📝 Descrição", placeholder="Ex: Supermercado, Uber...")
 
@@ -425,8 +418,6 @@ elif menu == "💳 Nova Despesa":
       st.error("Por favor, preencha a descrição da despesa.")
     elif not cat_selecionada:
       st.error("Selecione uma categoria.")
-    elif not data_compra:
-      st.error("Corrija o formato da data antes de salvar.")
     elif valor <= 0:
       st.error("O valor da despesa deve ser maior que zero.")
     else:
