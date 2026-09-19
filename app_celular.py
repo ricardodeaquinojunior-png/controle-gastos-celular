@@ -187,7 +187,6 @@ st.divider()
 # ABA 1: RESUMO DO MÊS E FATURAS DETALHADAS
 # ==========================================
 if menu == "📊 Resumo do Mês":
-  # Gerador de meses em formato YYYY-MM para o seletor
   hoje = datetime.now()
   lista_meses_opcoes = []
   for i in range(-6, 7):
@@ -195,7 +194,6 @@ if menu == "📊 Resumo do Mês":
     lista_meses_opcoes.append(m_ref.strftime("%Y-%m"))
 
 
-  # Função para exibir o mês em português no selectbox
   def formatar_mes_pt(ano_mes):
     ano, mes = ano_mes.split("-")
     return f"{meses_pt[mes]} de {ano}"
@@ -229,7 +227,6 @@ if menu == "📊 Resumo do Mês":
 
   st.divider()
 
-  # --- DETALHAMENTO DE RECEITAS ---
   with st.expander("🔍 Ver detalhes das Receitas"):
     lista_receitas = obter_lancamentos_mes("Receita", mes_selecionado)
     if lista_receitas:
@@ -243,7 +240,6 @@ if menu == "📊 Resumo do Mês":
     else:
       st.info("Nenhuma receita registrada neste período.")
 
-  # --- DETALHAMENTO DE DESPESAS ---
   with st.expander("🔍 Ver detalhes das Despesas"):
     lista_despesas = obter_lancamentos_mes("Despesa", mes_selecionado)
     if lista_despesas:
@@ -259,7 +255,6 @@ if menu == "📊 Resumo do Mês":
 
   st.divider()
 
-  # --- FATURAS DOS CARTÕES COM EXPANSORES DE DETALHES ---
   st.subheader("💳 Faturas dos Cartões (Regra de Período)")
 
   cartoes_dict, _ = carregar_cartoes()
@@ -311,10 +306,8 @@ if menu == "📊 Resumo do Mês":
               value=f"R$ {info['total']:,.2f}",
           )
 
-          # Expansor clicável para ver os gastos detalhados de cada cartão
           with st.expander(f"🔍 Detalhes da fatura - {c_nome}"):
             if info["itens"]:
-              # Ordena os itens do cartão por data
               itens_ordenados = sorted(
                   info["itens"],
                   key=lambda x: x[0] if x[0] else datetime.min,
@@ -357,23 +350,37 @@ elif menu == "💳 Nova Despesa":
       value=0.01,
   )
 
-  col_d1, col_d2, col_d3 = st.columns(3)
-  with col_d1:
-    btn_hoje = st.button("📅 Hoje", use_container_width=True)
-  with col_d2:
-    btn_ontem = st.button("↩️ Ontem", use_container_width=True)
-  with col_d3:
-    btn_outro = st.button("🗓️ Outra", use_container_width=True)
-
+  # Inicializa o estado da data se não existir
   if "data_compra" not in st.session_state:
     st.session_state.data_compra = datetime.now().date()
 
-  if btn_hoje:
-    st.session_state.data_compra = datetime.now().date()
-  elif btn_ontem:
-    st.session_state.data_compra = datetime.now().date() - timedelta(days=1)
+  # Atalhos de Data rápidos
+  col_d1, col_d2, col_d3 = st.columns(3)
+  with col_d1:
+    if st.button("📅 Hoje", use_container_width=True):
+      st.session_state.data_compra = datetime.now().date()
+  with col_d2:
+    if st.button("↩️ Ontem", use_container_width=True):
+      st.session_state.data_compra = datetime.now().date() - timedelta(days=1)
+  with col_d3:
+    btn_outro = st.button("🗓️ Outra", use_container_width=True)
 
-  data_compra = st.date_input("Data da Compra", value=st.session_state.data_compra)
+  # Se o usuário clicar em "Outra" ou se já estiver manipulando, exibe o calendário interativo (DD/MM/AAAA)
+  if btn_outro or "mostrar_calendario" in st.session_state:
+    st.session_state.mostrar_calendario = True
+
+  if st.session_state.get("mostrar_calendario", False):
+    data_compra = st.date_input(
+        "Selecione a Data (DD/MM/AAAA)", value=st.session_state.data_compra
+    )
+    st.session_state.data_compra = data_compra
+  else:
+    # Mostra a data selecionada atualmente em formato amigável DD/MM/AAAA
+    st.text(
+        f"Data selecionada: {st.session_state.data_compra.strftime('%d/%m/%Y')}"
+    )
+    data_compra = st.session_state.data_compra
+
   descricao = st.text_input("📝 Descrição", placeholder="Ex: Supermercado, Uber...")
 
   cartoes_dict, cartao_principal = carregar_cartoes()
