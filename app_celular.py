@@ -10,6 +10,23 @@ st.set_page_config(
 )
 
 
+# Dicionário para garantir meses em português
+meses_pt = {
+    "01": "Janeiro",
+    "02": "Fevereiro",
+    "03": "Março",
+    "04": "Abril",
+    "05": "Maio",
+    "06": "Junho",
+    "07": "Julho",
+    "08": "Agosto",
+    "09": "Setembro",
+    "10": "Outubro",
+    "11": "Novembro",
+    "12": "Dezembro",
+}
+
+
 # Função de conexão inteligente (Pooler)
 def conectar_banco():
   if "supabase" in st.secrets:
@@ -97,7 +114,6 @@ def carregar_subcategorias(id_categoria):
 
 
 def obter_resumo_mes(ano_mes):
-  """Busca receitas e despesas com base no mês civil selecionado"""
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
@@ -145,7 +161,6 @@ def obter_lancamentos_mes(tipo, ano_mes):
 
 
 def calcular_ciclo_fatura(d_date, dia_fechamento):
-  """Aplica rigorosamente a regra de período de fechamento do cartão"""
   f_dia = min(dia_fechamento, calendar.monthrange(d_date.year, d_date.month)[1])
   if d_date.day > f_dia:
     r_next = d_date + relativedelta(months=1)
@@ -169,21 +184,28 @@ menu = st.radio(
 st.divider()
 
 # ==========================================
-# ABA 1: RESUMO DO MÊS E FATURAS POR PERÍODO
+# ABA 1: RESUMO DO MÊS E FATURAS DETALHADAS
 # ==========================================
 if menu == "📊 Resumo do Mês":
-  # Seletor de Período (Passados, Atual e Futuros)
+  # Gerador de meses em formato YYYY-MM para o seletor
   hoje = datetime.now()
   lista_meses_opcoes = []
-  for i in range(-6, 7):  # 6 meses para trás e 6 meses para frente
+  for i in range(-6, 7):
     m_ref = hoje + relativedelta(months=i)
     lista_meses_opcoes.append(m_ref.strftime("%Y-%m"))
+
+
+  # Função para exibir o mês em português no selectbox
+  def formatar_mes_pt(ano_mes):
+    ano, mes = ano_mes.split("-")
+    return f"{meses_pt[mes]} de {ano}"
+
 
   mes_selecionado = st.selectbox(
       "📅 Selecionar Período (Mês)",
       options=lista_meses_opcoes,
-      index=6,  # Índice 6 é o mês atual
-      format_func=lambda x: datetime.strptime(x, "%Y-%m").strftime("%B / %Y"),
+      index=6,
+      format_func=formatar_mes_pt,
   )
 
   st.divider()
@@ -213,7 +235,7 @@ if menu == "📊 Resumo do Mês":
     if lista_receitas:
       for data, desc, val in lista_receitas:
         data_fmt = (
-            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m")
+            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
             if data
             else ""
         )
@@ -227,7 +249,7 @@ if menu == "📊 Resumo do Mês":
     if lista_despesas:
       for data, desc, val in lista_despesas:
         data_fmt = (
-            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m")
+            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
             if data
             else ""
         )
@@ -237,20 +259,17 @@ if menu == "📊 Resumo do Mês":
 
   st.divider()
 
-  # --- FATURAS DOS CARTÕES BASEADAS NO PERÍODO SELECIONADO ---
+  # --- FATURAS DOS CARTÕES COM EXPANSORES DE DETALHES ---
   st.subheader("💳 Faturas dos Cartões (Regra de Período)")
 
   cartoes_dict, _ = carregar_cartoes()
   if cartoes_dict:
-    # Converte mes_selecionado para referência de data do ciclo
-    ano_sel, mes_sel = map(int, mes_selecionado.split("-"))
-
     try:
       conn = conectar_banco()
       cursor = conn.cursor()
       cursor.execute(
           """
-                SELECT l.valor, l.data_lancamento, c.nome, c.dia_fechamento 
+                SELECT l.valor, l.data_lancamento, l.descricao, c.nome, c.dia_fechamento 
                 FROM lancamentos l
                 JOIN cartoes c ON l.id_cartao = c.id
                 WHERE l.id_cartao IS NOT NULL;
@@ -261,15 +280,13 @@ if menu == "📊 Resumo do Mês":
       conn.close()
 
       faturas_por_cartao = {}
-      for val, ldata, c_nome, c_fech in todos_lanc_cartoes:
+      for val, ldata, ldesc, c_nome, c_fech in todos_lanc_cartoes:
         if not ldata:
           continue
         d_date = ldata.date() if hasattr(ldata, "date") else ldata
         fechamento = c_fech or 24
 
         inicio_ciclo, fim_ciclo = calcular_ciclo_fatura(d_date, fechamento)
-
-        # O ciclo pertence ao mês da data de fim da fatura
         ciclo_ano_mes = fim_ciclo.strftime("%Y-%m")
 
         if ciclo_ano_mes == mes_selecionado:
@@ -278,8 +295,10 @@ if menu == "📊 Resumo do Mês":
                 "total": 0.0,
                 "inicio": inicio_ciclo,
                 "fim": fim_ciclo,
+                "itens": [],
             }
           faturas_por_cartao[c_nome]["total"] += float(val or 0)
+          faturas_por_cartao[c_nome]["itens"].append((ldata, ldesc, val))
 
       if faturas_por_cartao:
         for c_nome, info in faturas_por_cartao.items():
@@ -291,6 +310,31 @@ if menu == "📊 Resumo do Mês":
               label=f"Cartão: {c_nome} ({periodo_txt})",
               value=f"R$ {info['total']:,.2f}",
           )
+
+          # Expansor clicável para ver os gastos detalhados de cada cartão
+          with st.expander(f"🔍 Detalhes da fatura - {c_nome}"):
+            if info["itens"]:
+              # Ordena os itens do cartão por data
+              itens_ordenados = sorted(
+                  info["itens"],
+                  key=lambda x: x[0] if x[0] else datetime.min,
+                  reverse=True,
+              )
+              for data_item, desc_item, val_item in itens_ordenados:
+                data_item_fmt = (
+                    datetime.strptime(str(data_item), "%Y-%m-%d").strftime(
+                        "%d/%m/%Y"
+                    )
+                    if data_item
+                    else ""
+                )
+                st.markdown(
+                    f"**{data_item_fmt}** - {desc_item}: `R$"
+                    f" {float(val_item or 0):,.2f}`"
+                )
+            else:
+              st.info("Nenhum lançamento neste período para este cartão.")
+          st.write("")
       else:
         st.info("Nenhuma fatura calculada para este período específico.")
 
