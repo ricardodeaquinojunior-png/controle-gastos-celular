@@ -350,36 +350,35 @@ elif menu == "💳 Nova Despesa":
       value=0.01,
   )
 
-  # Inicializa o estado da data se não existir
-  if "data_compra" not in st.session_state:
-    st.session_state.data_compra = datetime.now().date()
+  # Gerenciamento da Data (DD/MM/AAAA)
+  if "str_data_compra" not in st.session_state:
+    st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
 
-  # Atalhos de Data rápidos
   col_d1, col_d2, col_d3 = st.columns(3)
   with col_d1:
     if st.button("📅 Hoje", use_container_width=True):
-      st.session_state.data_compra = datetime.now().date()
+      st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
   with col_d2:
     if st.button("↩️ Ontem", use_container_width=True):
-      st.session_state.data_compra = datetime.now().date() - timedelta(days=1)
+      ontem = datetime.now().date() - timedelta(days=1)
+      st.session_state.str_data_compra = ontem.strftime("%d/%m/%Y")
   with col_d3:
-    btn_outro = st.button("🗓️ Outra", use_container_width=True)
+    if st.button("🗓️ Outra", use_container_width=True):
+      pass
 
-  # Se o usuário clicar em "Outra" ou se já estiver manipulando, exibe o calendário interativo (DD/MM/AAAA)
-  if btn_outro or "mostrar_calendario" in st.session_state:
-    st.session_state.mostrar_calendario = True
+  str_data_digitada = st.text_input(
+      "Data da Compra (DD/MM/AAAA)",
+      value=st.session_state.str_data_compra,
+      max_chars=10,
+      placeholder="DD/MM/AAAA",
+  )
+  st.session_state.str_data_compra = str_data_digitada
 
-  if st.session_state.get("mostrar_calendario", False):
-    data_compra = st.date_input(
-        "Selecione a Data (DD/MM/AAAA)", value=st.session_state.data_compra
-    )
-    st.session_state.data_compra = data_compra
-  else:
-    # Mostra a data selecionada atualmente em formato amigável DD/MM/AAAA
-    st.text(
-        f"Data selecionada: {st.session_state.data_compra.strftime('%d/%m/%Y')}"
-    )
-    data_compra = st.session_state.data_compra
+  try:
+    data_compra = datetime.strptime(str_data_digitada, "%d/%m/%Y").date()
+  except ValueError:
+    st.error("Formato de data inválido! Use o padrão DD/MM/AAAA.")
+    data_compra = None
 
   descricao = st.text_input("📝 Descrição", placeholder="Ex: Supermercado, Uber...")
 
@@ -426,6 +425,8 @@ elif menu == "💳 Nova Despesa":
       st.error("Por favor, preencha a descrição da despesa.")
     elif not cat_selecionada:
       st.error("Selecione uma categoria.")
+    elif not data_compra:
+      st.error("Corrija o formato da data antes de salvar.")
     elif valor <= 0:
       st.error("O valor da despesa deve ser maior que zero.")
     else:
