@@ -92,7 +92,81 @@ def carregar_subcategorias(id_categoria):
     return {}
 
 
-def obter_resumo_mes():
+def obter_lancamentos_mes(tipo):
+  """Busca os lançamentos detalhados de Receita ou Despesa do mês atual"""
+  try:
+    conn = conectar_banco()
+    cursor = conn.cursor()
+    ano_mes_atual = datetime.now().strftime("%Y-%m")
+    cursor.execute(
+        """
+            SELECT data_lancamento, descricao, valor 
+            FROM lancamentos 
+            WHERE tipo = %s AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+            ORDER BY data_lancamento DESC;
+        """,
+        (tipo, ano_mes_atual),
+    )
+    res = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return res
+  except Exception:
+    return []
+
+
+def obter_faturas_cartoes():
+  """Calcula o total da fatura por cartão no mês atual"""
+  try:
+    conn = conectar_banco()
+    cursor = conn.cursor()
+    ano_mes_atual = datetime.now().strftime("%Y-%m")
+    cursor.execute(
+        """
+            c.nome as cartao, SUM(l.valor) as total
+            FROM lancamentos l
+            JOIN cartoes c ON l.id_cartao = c.id
+            WHERE TO_CHAR(l.data_lancamento, 'YYYY-MM') = %s
+            GROUP BY c.nome
+            ORDER BY c.nome;
+        """,
+        (ano_mes_atual,),
+    )
+    # Correção da query segura para faturas de cartão
+    cursor.execute(
+        """
+            SELECT c.nome, SUM(l.valor) 
+            FROM lancamentos l
+            JOIN cartoes c ON l.id_cartao = c.id
+            WHERE TO_CHAR(l.data_lancamento, 'YYYY-MM') = %s
+            GROUP BY c.nome
+            ORDER BY c.nome;
+        """,
+        (ano_mes_atual,),
+    )
+    res = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return res
+  except Exception:
+    return []
+
+
+# --- Menu de Navegação Superior ---
+st.title("💰 Meu Controle")
+
+menu = st.radio(
+    "Navegação", ["📊 Resumo do Mês", "💳 Nova Despesa"], horizontal=True
+)
+st.divider()
+
+# ==========================================
+# ABA 1: RESUMO DO MÊS COM DETALHES E FATURAS
+# ==========================================
+if menu == "📊 Resumo do Mês":
+  st.subheader("📅 Resumo de " + datetime.now().strftime("%B / %Y"))
+
+  # Busca totais gerais do mês
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
@@ -106,38 +180,18 @@ def obter_resumo_mes():
         """,
         (ano_mes_atual,),
     )
-    res = cursor.fetchall()
+    res_totais = cursor.fetchall()
     cursor.close()
     conn.close()
-
-    totais = {"Receita": 0.0, "Despesa": 0.0}
-    for tipo, valor in res:
-      if tipo in totais:
-        totais[tipo] = float(valor)
-    return totais
+    totais = {tipo: float(val) for tipo, val in res_totais}
   except Exception:
-    return {"Receita": 0.0, "Despesa": 0.0}
+    totais = {}
 
-
-# --- Menu de Navegação Superior ---
-st.title("💰 Meu Controle")
-
-menu = st.radio(
-    "Navegação", ["📊 Resumo do Mês", "💳 Nova Despesa"], horizontal=True
-)
-st.divider()
-
-# ==========================================
-# ABA 1: RESUMO DO MÊS
-# ==========================================
-if menu == "📊 Resumo do Mês":
-  st.subheader("📅 Resumo de " + datetime.now().strftime("%B / %Y"))
-
-  resumo = obter_resumo_mes()
-  receitas = resumo.get("Receita", 0.0)
-  despesas = resumo.get("Despesa", 0.0)
+  receitas = totais.get("Receita", 0.0)
+  despesas = totais.get("Despesa", 0.0)
   saldo = receitas - despesas
 
+  # Cards de Resumo
   col1, col2 = st.columns(2)
   with col1:
     st.metric(label="🟢 Receitas", value=f"R$ {receitas:,.2f}")
@@ -150,10 +204,46 @@ if menu == "📊 Resumo do Mês":
       delta=f"R$ {saldo:,.2f}",
   )
 
-  st.info(
-      "Dica: Toque em 'Nova Despesa' no menu acima para registrar um gasto com"
-      " cartão de forma rápida."
-  )
+  st.divider()
+
+  # --- DETALHAMENTO DE RECEITAS (Expansível) ---
+  with st.expander("🔍 Ver detalhes das Receitas"):
+    lista_receitas = obter_lancamentos_mes("Receita")
+    if lista_receitas:
+      for data, desc, val in lista_receitas:
+        data_fmt = (
+            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m")
+            if data
+            else ""
+        )
+        st.markdown(f"**{data_fmt}** - {desc}: `R$ {val:,.2f}`")
+    else:
+      st.info("Nenhuma receita registrada neste mês.")
+
+  # --- DETALHAMENTO DE DESPESAS (Expansível) ---
+  with st.expander("🔍 Ver detalhes das Despesas"):
+    lista_despesas = obter_lancamentos_mes("Despesa")
+    if lista_despesas:
+      for data, desc, val in lista_despesas:
+        data_fmt = (
+            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m")
+            if data
+            else ""
+        )
+        st.markdown(f"**{data_fmt}** - {desc}: `R$ {val:,.2f}`")
+    else:
+      st.info("Nenhuma despesa registrada neste mês.")
+
+  st.divider()
+
+  # --- TOTAL DA FATURA POR CARTÃO ---
+  st.subheader("💳 Faturas dos Cartões (Mês Atual)")
+  faturas = obter_faturas_cartoes()
+  if faturas:
+    for cartao, total_cartao in faturas:
+      st.metric(label=f"Cartão: {cartao}", value=f"R$ {total_cartao:,.2f}")
+  else:
+    st.info("Nenhum gasto em cartão registrado para este mês.")
 
 # ==========================================
 # ABA 2: NOVA DESPESA CARTÃO
@@ -161,7 +251,6 @@ if menu == "📊 Resumo do Mês":
 elif menu == "💳 Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
-  # 1. Campo de Valor ajustado (sem valor inicial abaixo do min_value)
   valor = st.number_input(
       "Valor da despesa cartão (R$)",
       min_value=0.01,
@@ -170,7 +259,6 @@ elif menu == "💳 Nova Despesa":
       value=0.01,
   )
 
-  # 2. Atalhos de Data rápidos
   col_d1, col_d2, col_d3 = st.columns(3)
   with col_d1:
     btn_hoje = st.button("📅 Hoje", use_container_width=True)
@@ -188,11 +276,8 @@ elif menu == "💳 Nova Despesa":
     st.session_state.data_compra = datetime.now().date() - timedelta(days=1)
 
   data_compra = st.date_input("Data da Compra", value=st.session_state.data_compra)
-
-  # 3. Descrição
   descricao = st.text_input("📝 Descrição", placeholder="Ex: Supermercado, Uber...")
 
-  # 4. Cartão de Crédito
   cartoes_dict, cartao_principal = carregar_cartoes()
   if not cartoes_dict:
     st.warning("Nenhum cartão encontrado. Verifique sua tabela de cartões.")
@@ -208,7 +293,6 @@ elif menu == "💳 Nova Despesa":
       ),
   )
 
-  # 5. Categoria e Subcategoria dinâmicas
   cats_dict = carregar_categorias()
   cat_selecionada = st.selectbox(
       "📂 Categoria", options=list(cats_dict.keys()) if cats_dict else []
@@ -221,7 +305,6 @@ elif menu == "💳 Nova Despesa":
   )
   id_sub = subs_dict.get(sub_selecionada) if sub_selecionada else None
 
-  # 6. Opção de Parcelamento
   parcelado = st.checkbox("🔁 Despesa Parcelada")
   qtd_parcelas = 1
   if parcelado:
@@ -233,7 +316,6 @@ elif menu == "💳 Nova Despesa":
 
   st.divider()
 
-  # Botão de Ação Principal
   if st.button("✔ Cadastrar Despesa", type="primary", use_container_width=True):
     if not descricao.strip():
       st.error("Por favor, preencha a descrição da despesa.")
