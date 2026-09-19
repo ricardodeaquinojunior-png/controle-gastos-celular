@@ -9,8 +9,7 @@ st.set_page_config(
 )
 
 
-# Função de conexão reutilizando a sua estrutura
-# Função de conexão inteligente (funciona local e na nuvem do Streamlit)
+# Função de conexão inteligente (funciona localmente e na nuvem via Pooler)
 def conectar_banco():
   if "supabase" in st.secrets:
     db_conf = st.secrets["supabase"]
@@ -22,14 +21,15 @@ def conectar_banco():
         port=db_conf["port"],
     )
   else:
-    # Conexão local de fallback para testes no VS Code
+    # Conexão de fallback para testes locais no VS Code
     return psycopg2.connect(
-        host="db.vihsucqqzeaestnynffz.supabase.co",
+        host="aws-0-us-east-1.pooler.supabase.com",
         database="postgres",
-        user="postgres",
+        user="postgres.vihsucqqzeaestnynffz",
         password=r"gPAc6c9P+_ZV2u$",
-        port=5432,
+        port=6543,
     )
+
 
 # Funções para buscar dados do banco
 def carregar_cartoes():
@@ -80,8 +80,7 @@ def carregar_subcategorias(id_categoria):
     conn = conectar_banco()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id_subcategoria, descricao FROM subcategorias WHERE id_categoria ="
-        " %s ORDER BY descricao;",
+        "SELECT id_subcategoria, descricao FROM subcategorias WHERE id_categoria = %s ORDER BY descricao;",
         (id_categoria,),
     )
     res = cursor.fetchall()
