@@ -117,11 +117,13 @@ def obter_resumo_mes(ano_mes):
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
+    # Ignora transferências no cálculo de receitas
     cursor.execute(
         """
             SELECT tipo, SUM(valor) 
             FROM lancamentos 
             WHERE TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+              AND tipo != 'Transferência'
             GROUP BY tipo;
         """,
         (ano_mes,),
@@ -143,14 +145,16 @@ def obter_lancamentos_mes(tipo, ano_mes):
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
+    # Garante que transferências não apareçam nas receitas
+    filtro_tipo = "tipo = %s AND tipo != 'Transferência'" if tipo == "Receita" else "tipo = %s"
     cursor.execute(
-        """
+        f"""
             SELECT data_lancamento, descricao, valor 
             FROM lancamentos 
-            WHERE tipo = %s AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+            WHERE {filtro_tipo} AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
             ORDER BY data_lancamento DESC;
         """,
-        (tipo, ano_mes),
+        (tipo, ano_mes) if tipo == "Receita" else (tipo, ano_mes),
     )
     res = cursor.fetchall()
     cursor.close()
@@ -350,34 +354,32 @@ elif menu == "💳 Nova Despesa":
       value=0.01,
   )
 
-  # Gerenciamento de Data com Calendário Nativo
-  if "data_compra_state" not in st.session_state:
-    st.session_state.data_compra_state = datetime.now().date()
+  # Gerenciamento de Data via campo de texto DD/MM/AAAA
+  if "str_data_compra" not in st.session_state:
+    st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
 
-  col_d1, col_d2, col_d3 = st.columns(3)
+  col_d1, col_d2 = st.columns(2)
   with col_d1:
     if st.button("📅 Hoje", use_container_width=True):
-      st.session_state.data_compra_state = datetime.now().date()
+      st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
   with col_d2:
     if st.button("↩️ Ontem", use_container_width=True):
-      st.session_state.data_compra_state = datetime.now().date() - timedelta(
-          days=1
-      )
-  with col_d3:
-    if st.button("🗓️ Outra", use_container_width=True):
-      pass
+      ontem = datetime.now().date() - timedelta(days=1)
+      st.session_state.str_data_compra = ontem.strftime("%d/%m/%Y")
 
-  # Calendário interativo nativo do Streamlit
-  data_compra = st.date_input(
-      "Data da Compra", value=st.session_state.data_compra_state
+  str_data_digitada = st.text_input(
+      "Data da Compra (DD/MM/AAAA)",
+      value=st.session_state.str_data_compra,
+      max_chars=10,
+      placeholder="DD/MM/AAAA",
   )
-  st.session_state.data_compra_state = data_compra
+  st.session_state.str_data_compra = str_data_digitada
 
-  # Exibição clara da data selecionada rigorosamente no formato DD/MM/AAAA
-  st.caption(
-      f"📅 Data selecionada para cadastro:"
-      f" **{data_compra.strftime('%d/%m/%Y')}**"
-  )
+  try:
+    data_compra = datetime.strptime(str_data_digitada, "%d/%m/%Y").date()
+  except ValueError:
+    st.error("Formato de data inválido! Utilize estritamente DD/MM/AAAA.")
+    data_compra = None
 
   descricao = st.text_input("📝 Descrição", placeholder="Ex: Supermercado, Uber...")
 
@@ -424,6 +426,8 @@ elif menu == "💳 Nova Despesa":
       st.error("Por favor, preencha a descrição da despesa.")
     elif not cat_selecionada:
       st.error("Selecione uma categoria.")
+    elif not data_compra:
+      st.error("Corrija o formato da data antes de salvar.")
     elif valor <= 0:
       st.error("O valor da despesa deve ser maior que zero.")
     else:
