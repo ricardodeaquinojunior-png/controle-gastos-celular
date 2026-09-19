@@ -117,13 +117,14 @@ def obter_resumo_mes(ano_mes):
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
-    # Ignora transferências no cálculo de receitas
+    # Exclui qualquer registro cujo tipo ou descrição contenha 'transf' ou 'transferência'
     cursor.execute(
         """
             SELECT tipo, SUM(valor) 
             FROM lancamentos 
             WHERE TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
               AND tipo != 'Transferência'
+              AND LOWER(descricao) NOT LIKE 'transf%'
             GROUP BY tipo;
         """,
         (ano_mes,),
@@ -145,17 +146,32 @@ def obter_lancamentos_mes(tipo, ano_mes):
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
-    # Garante que transferências não apareçam nas receitas
-    filtro_tipo = "tipo = %s AND tipo != 'Transferência'" if tipo == "Receita" else "tipo = %s"
-    cursor.execute(
-        f"""
-            SELECT data_lancamento, descricao, valor 
-            FROM lancamentos 
-            WHERE {filtro_tipo} AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
-            ORDER BY data_lancamento DESC;
-        """,
-        (tipo, ano_mes) if tipo == "Receita" else (tipo, ano_mes),
-    )
+    
+    if tipo == "Receita":
+      # Filtro rígido para impedir que transferências apareçam nas receitas
+      cursor.execute(
+          """
+              SELECT data_lancamento, descricao, valor 
+              FROM lancamentos 
+              WHERE tipo = %s 
+                AND tipo != 'Transferência'
+                AND LOWER(descricao) NOT LIKE 'transf%'
+                AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+              ORDER BY data_lancamento DESC;
+          """,
+          (tipo, ano_mes),
+      )
+    else:
+      cursor.execute(
+          """
+              SELECT data_lancamento, descricao, valor 
+              FROM lancamentos 
+              WHERE tipo = %s AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+              ORDER BY data_lancamento DESC;
+          """,
+          (tipo, ano_mes),
+      )
+
     res = cursor.fetchall()
     cursor.close()
     conn.close()
