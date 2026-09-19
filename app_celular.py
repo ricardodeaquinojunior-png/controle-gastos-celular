@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
+import calendar
 import psycopg2
 import streamlit as st
 
@@ -36,18 +37,21 @@ def carregar_cartoes():
     conn = conectar_banco()
     cursor = conn.cursor()
     try:
-      cursor.execute("SELECT id, nome, principal FROM cartoes ORDER BY nome;")
+      cursor.execute(
+          "SELECT id, nome, dia_fechamento, principal FROM cartoes ORDER BY"
+          " nome;"
+      )
       res = cursor.fetchall()
-      cartoes = {row[1]: str(row[0]) for row in res}
+      cartoes = {row[1]: {"id": str(row[0]), "fechamento": row[2] or 24} for row in res}
       principal = next(
-          (row[1] for row in res if len(row) > 2 and row[2]),
+          (row[1] for row in res if len(row) > 3 and row[3]),
           list(cartoes.keys())[0] if cartoes else None,
       )
     except Exception:
       conn.rollback()
-      cursor.execute("SELECT id, nome FROM cartoes ORDER BY nome;")
+      cursor.execute("SELECT id, nome, dia_fechamento FROM cartoes ORDER BY nome;")
       res = cursor.fetchall()
-      cartoes = {row[1]: str(row[0]) for row in res}
+      cartoes = {row[1]: {"id": str(row[0]), "fechamento": row[2] or 24} for row in res}
       principal = list(cartoes.keys())[0] if cartoes else None
     cursor.close()
     conn.close()
@@ -92,12 +96,37 @@ def carregar_subcategorias(id_categoria):
     return {}
 
 
-def obter_lancamentos_mes(tipo):
-  """Busca os lançamentos detalhados de Receita ou Despesa do mês atual"""
+def obter_resumo_mes(ano_mes):
+  """Busca receitas e despesas com base no mês civil selecionado"""
   try:
     conn = conectar_banco()
     cursor = conn.cursor()
-    ano_mes_atual = datetime.now().strftime("%Y-%m")
+    cursor.execute(
+        """
+            SELECT tipo, SUM(valor) 
+            FROM lancamentos 
+            WHERE TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
+            GROUP BY tipo;
+        """,
+        (ano_mes,),
+    )
+    res = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    totais = {"Receita": 0.0, "Despesa": 0.0}
+    for tipo, valor in res:
+      if tipo in totais:
+        totais[tipo] = float(valor)
+    return totais
+  except Exception:
+    return {"Receita": 0.0, "Despesa": 0.0}
+
+
+def obter_lancamentos_mes(tipo, ano_mes):
+  try:
+    conn = conectar_banco()
+    cursor = conn.cursor()
     cursor.execute(
         """
             SELECT data_lancamento, descricao, valor 
@@ -105,7 +134,7 @@ def obter_lancamentos_mes(tipo):
             WHERE tipo = %s AND TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
             ORDER BY data_lancamento DESC;
         """,
-        (tipo, ano_mes_atual),
+        (tipo, ano_mes),
     )
     res = cursor.fetchall()
     cursor.close()
@@ -115,41 +144,20 @@ def obter_lancamentos_mes(tipo):
     return []
 
 
-def obter_faturas_cartoes():
-  """Calcula o total da fatura por cartão no mês atual"""
-  try:
-    conn = conectar_banco()
-    cursor = conn.cursor()
-    ano_mes_atual = datetime.now().strftime("%Y-%m")
-    cursor.execute(
-        """
-            c.nome as cartao, SUM(l.valor) as total
-            FROM lancamentos l
-            JOIN cartoes c ON l.id_cartao = c.id
-            WHERE TO_CHAR(l.data_lancamento, 'YYYY-MM') = %s
-            GROUP BY c.nome
-            ORDER BY c.nome;
-        """,
-        (ano_mes_atual,),
-    )
-    # Correção da query segura para faturas de cartão
-    cursor.execute(
-        """
-            SELECT c.nome, SUM(l.valor) 
-            FROM lancamentos l
-            JOIN cartoes c ON l.id_cartao = c.id
-            WHERE TO_CHAR(l.data_lancamento, 'YYYY-MM') = %s
-            GROUP BY c.nome
-            ORDER BY c.nome;
-        """,
-        (ano_mes_atual,),
-    )
-    res = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return res
-  except Exception:
-    return []
+def calcular_ciclo_fatura(d_date, dia_fechamento):
+  """Aplica rigorosamente a regra de período de fechamento do cartão"""
+  f_dia = min(dia_fechamento, calendar.monthrange(d_date.year, d_date.month)[1])
+  if d_date.day > f_dia:
+    r_next = d_date + relativedelta(months=1)
+    r_ano, r_mes = r_next.year, r_next.month
+  else:
+    r_ano, r_mes = d_date.year, d_date.month
+
+  max_dia_fim = calendar.monthrange(r_ano, r_mes)[1]
+  fim_dia = min(dia_fechamento, max_dia_fim)
+  fim = date(r_ano, r_mes, fim_dia)
+  inicio = fim - relativedelta(months=1) + relativedelta(days=1)
+  return inicio, fim
 
 
 # --- Menu de Navegação Superior ---
@@ -161,37 +169,30 @@ menu = st.radio(
 st.divider()
 
 # ==========================================
-# ABA 1: RESUMO DO MÊS COM DETALHES E FATURAS
+# ABA 1: RESUMO DO MÊS E FATURAS POR PERÍODO
 # ==========================================
 if menu == "📊 Resumo do Mês":
-  st.subheader("📅 Resumo de " + datetime.now().strftime("%B / %Y"))
+  # Seletor de Período (Passados, Atual e Futuros)
+  hoje = datetime.now()
+  lista_meses_opcoes = []
+  for i in range(-6, 7):  # 6 meses para trás e 6 meses para frente
+    m_ref = hoje + relativedelta(months=i)
+    lista_meses_opcoes.append(m_ref.strftime("%Y-%m"))
 
-  # Busca totais gerais do mês
-  try:
-    conn = conectar_banco()
-    cursor = conn.cursor()
-    ano_mes_atual = datetime.now().strftime("%Y-%m")
-    cursor.execute(
-        """
-            SELECT tipo, SUM(valor) 
-            FROM lancamentos 
-            WHERE TO_CHAR(data_lancamento, 'YYYY-MM') = %s 
-            GROUP BY tipo;
-        """,
-        (ano_mes_atual,),
-    )
-    res_totais = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    totais = {tipo: float(val) for tipo, val in res_totais}
-  except Exception:
-    totais = {}
+  mes_selecionado = st.selectbox(
+      "📅 Selecionar Período (Mês)",
+      options=lista_meses_opcoes,
+      index=6,  # Índice 6 é o mês atual
+      format_func=lambda x: datetime.strptime(x, "%Y-%m").strftime("%B / %Y"),
+  )
 
-  receitas = totais.get("Receita", 0.0)
-  despesas = totais.get("Despesa", 0.0)
+  st.divider()
+
+  resumo = obter_resumo_mes(mes_selecionado)
+  receitas = resumo.get("Receita", 0.0)
+  despesas = resumo.get("Despesa", 0.0)
   saldo = receitas - despesas
 
-  # Cards de Resumo
   col1, col2 = st.columns(2)
   with col1:
     st.metric(label="🟢 Receitas", value=f"R$ {receitas:,.2f}")
@@ -199,16 +200,16 @@ if menu == "📊 Resumo do Mês":
     st.metric(label="🔴 Despesas", value=f"R$ {despesas:,.2f}")
 
   st.metric(
-      label="💼 Saldo do Mês",
+      label="💼 Saldo do Período",
       value=f"R$ {saldo:,.2f}",
       delta=f"R$ {saldo:,.2f}",
   )
 
   st.divider()
 
-  # --- DETALHAMENTO DE RECEITAS (Expansível) ---
+  # --- DETALHAMENTO DE RECEITAS ---
   with st.expander("🔍 Ver detalhes das Receitas"):
-    lista_receitas = obter_lancamentos_mes("Receita")
+    lista_receitas = obter_lancamentos_mes("Receita", mes_selecionado)
     if lista_receitas:
       for data, desc, val in lista_receitas:
         data_fmt = (
@@ -218,11 +219,11 @@ if menu == "📊 Resumo do Mês":
         )
         st.markdown(f"**{data_fmt}** - {desc}: `R$ {val:,.2f}`")
     else:
-      st.info("Nenhuma receita registrada neste mês.")
+      st.info("Nenhuma receita registrada neste período.")
 
-  # --- DETALHAMENTO DE DESPESAS (Expansível) ---
+  # --- DETALHAMENTO DE DESPESAS ---
   with st.expander("🔍 Ver detalhes das Despesas"):
-    lista_despesas = obter_lancamentos_mes("Despesa")
+    lista_despesas = obter_lancamentos_mes("Despesa", mes_selecionado)
     if lista_despesas:
       for data, desc, val in lista_despesas:
         data_fmt = (
@@ -232,18 +233,71 @@ if menu == "📊 Resumo do Mês":
         )
         st.markdown(f"**{data_fmt}** - {desc}: `R$ {val:,.2f}`")
     else:
-      st.info("Nenhuma despesa registrada neste mês.")
+      st.info("Nenhuma despesa registrada neste período.")
 
   st.divider()
 
-  # --- TOTAL DA FATURA POR CARTÃO ---
-  st.subheader("💳 Faturas dos Cartões (Mês Atual)")
-  faturas = obter_faturas_cartoes()
-  if faturas:
-    for cartao, total_cartao in faturas:
-      st.metric(label=f"Cartão: {cartao}", value=f"R$ {total_cartao:,.2f}")
+  # --- FATURAS DOS CARTÕES BASEADAS NO PERÍODO SELECIONADO ---
+  st.subheader("💳 Faturas dos Cartões (Regra de Período)")
+
+  cartoes_dict, _ = carregar_cartoes()
+  if cartoes_dict:
+    # Converte mes_selecionado para referência de data do ciclo
+    ano_sel, mes_sel = map(int, mes_selecionado.split("-"))
+
+    try:
+      conn = conectar_banco()
+      cursor = conn.cursor()
+      cursor.execute(
+          """
+                SELECT l.valor, l.data_lancamento, c.nome, c.dia_fechamento 
+                FROM lancamentos l
+                JOIN cartoes c ON l.id_cartao = c.id
+                WHERE l.id_cartao IS NOT NULL;
+            """
+      )
+      todos_lanc_cartoes = cursor.fetchall()
+      cursor.close()
+      conn.close()
+
+      faturas_por_cartao = {}
+      for val, ldata, c_nome, c_fech in todos_lanc_cartoes:
+        if not ldata:
+          continue
+        d_date = ldata.date() if hasattr(ldata, "date") else ldata
+        fechamento = c_fech or 24
+
+        inicio_ciclo, fim_ciclo = calcular_ciclo_fatura(d_date, fechamento)
+
+        # O ciclo pertence ao mês da data de fim da fatura
+        ciclo_ano_mes = fim_ciclo.strftime("%Y-%m")
+
+        if ciclo_ano_mes == mes_selecionado:
+          if c_nome not in faturas_por_cartao:
+            faturas_por_cartao[c_nome] = {
+                "total": 0.0,
+                "inicio": inicio_ciclo,
+                "fim": fim_ciclo,
+            }
+          faturas_por_cartao[c_nome]["total"] += float(val or 0)
+
+      if faturas_por_cartao:
+        for c_nome, info in faturas_por_cartao.items():
+          periodo_txt = (
+              f"Período: {info['inicio'].strftime('%d/%m/%Y')} a"
+              f" {info['fim'].strftime('%d/%m/%Y')}"
+          )
+          st.metric(
+              label=f"Cartão: {c_nome} ({periodo_txt})",
+              value=f"R$ {info['total']:,.2f}",
+          )
+      else:
+        st.info("Nenhuma fatura calculada para este período específico.")
+
+    except Exception as e:
+      st.error(f"Erro ao calcular faturas: {e}")
   else:
-    st.info("Nenhum gasto em cartão registrado para este mês.")
+    st.info("Nenhum cartão cadastrado.")
 
 # ==========================================
 # ABA 2: NOVA DESPESA CARTÃO
@@ -325,7 +379,7 @@ elif menu == "💳 Nova Despesa":
       st.error("O valor da despesa deve ser maior que zero.")
     else:
       try:
-        id_cartao = cartoes_dict[cartao_selecionado]
+        id_cartao = cartoes_dict[cartao_selecionado]["id"]
         conn = conectar_banco()
         cursor = conn.cursor()
         desc_base = descricao.strip()
