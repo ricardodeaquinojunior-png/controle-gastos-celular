@@ -117,9 +117,7 @@ def obter_resumo_mes(ano_mes):
   try:
     ano, mes = map(int, ano_mes.split("-"))
     primeiro_dia = date(ano, mes, 1)
-    ultimo_dia = date(
-        ano, mes, calendar.monthrange(ano, mes)[1]
-    )  # último dia do mês
+    ultimo_dia = date(ano, mes, calendar.monthrange(ano, mes)[1])
 
     conn = conectar_banco()
     cursor = conn.cursor()
@@ -128,7 +126,8 @@ def obter_resumo_mes(ano_mes):
             SELECT tipo, SUM(valor) 
             FROM lancamentos 
             WHERE data_lancamento >= %s AND data_lancamento <= %s 
-              AND tipo != 'Transferência'
+              AND LOWER(tipo) != 'transferência'
+              AND LOWER(tipo) != 'transf'
               AND LOWER(descricao) NOT LIKE 'transf%'
             GROUP BY tipo;
         """,
@@ -140,11 +139,12 @@ def obter_resumo_mes(ano_mes):
 
     totais = {"Receita": 0.0, "Despesa": 0.0}
     for tipo, valor in res:
-      if tipo in totais:
-        totais[tipo] = float(valor)
+      tipo_str = str(tipo).strip().capitalize()
+      if tipo_str in totais:
+        totais[tipo_str] = float(valor)
     return totais
   except Exception as e:
-    print(f"Erro no resumo: {e}")
+    st.error(f"Erro no resumo do mês: {e}")
     return {"Receita": 0.0, "Despesa": 0.0}
 
 
@@ -157,29 +157,30 @@ def obter_lancamentos_mes(tipo, ano_mes):
     conn = conectar_banco()
     cursor = conn.cursor()
 
-    if tipo == "Receita":
+    if tipo.lower() == "receita":
       cursor.execute(
           """
               SELECT data_lancamento, descricao, valor 
               FROM lancamentos 
-              WHERE tipo = %s 
-                AND tipo != 'Transferência'
+              WHERE LOWER(tipo) = 'receita'
+                AND LOWER(tipo) != 'transferência'
+                AND LOWER(tipo) != 'transf'
                 AND LOWER(descricao) NOT LIKE 'transf%'
                 AND data_lancamento >= %s AND data_lancamento <= %s 
               ORDER BY data_lancamento DESC;
           """,
-          (tipo, primeiro_dia, ultimo_dia),
+          (primeiro_dia, ultimo_dia),
       )
     else:
       cursor.execute(
           """
               SELECT data_lancamento, descricao, valor 
               FROM lancamentos 
-              WHERE tipo = %s 
+              WHERE LOWER(tipo) = 'despesa'
                 AND data_lancamento >= %s AND data_lancamento <= %s 
               ORDER BY data_lancamento DESC;
           """,
-          (tipo, primeiro_dia, ultimo_dia),
+          (primeiro_dia, ultimo_dia),
       )
 
     res = cursor.fetchall()
@@ -187,7 +188,7 @@ def obter_lancamentos_mes(tipo, ano_mes):
     conn.close()
     return res
   except Exception as e:
-    print(f"Erro nos lançamentos: {e}")
+    st.error(f"Erro nos lançamentos: {e}")
     return []
 
 
