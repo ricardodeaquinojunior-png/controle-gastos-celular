@@ -90,7 +90,6 @@ def carregar_categorias():
     res = cursor.fetchall()
     cursor.close()
     conn.close()
-
     cats = {}
     if res:
       for row in res:
@@ -114,7 +113,6 @@ def carregar_subcategorias(id_categoria):
     res = cursor.fetchall()
     cursor.close()
     conn.close()
-
     subs = {}
     if res:
       for row in res:
@@ -123,91 +121,6 @@ def carregar_subcategorias(id_categoria):
   except Exception as e:
     st.error(f"Erro ao carregar subcategorias: {e}")
     return {}
-
-
-def obter_resumo_mes(ano_mes):
-  try:
-    partes = ano_mes.split("-")
-    ano, mes = int(partes[0]), int(partes[1])
-    primeiro_dia = date(ano, mes, 1)
-    ultimo_dia = date(ano, mes, calendar.monthrange(ano, mes)[1])
-
-    conn = conectar_banco()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-            SELECT tipo, SUM(valor) 
-            FROM lancamentos 
-            WHERE data_lancamento >= %s AND data_lancamento <= %s 
-              AND LOWER(tipo) != 'transferência'
-              AND LOWER(tipo) != 'transf'
-              AND LOWER(descricao) NOT LIKE 'transf%'
-            GROUP BY tipo;
-        """,
-        (primeiro_dia, ultimo_dia),
-    )
-    res = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    totais = {"Receita": 0.0, "Despesa": 0.0}
-    if res:
-      for row in res:
-        tipo = row[0]
-        valor = row[1]
-        if tipo is not None and valor is not None:
-          tipo_str = str(tipo).strip().capitalize()
-          if tipo_str in totais:
-            totais[tipo_str] = float(valor)
-    return totais
-  except Exception as e:
-    st.error(f"Erro no resumo do mês: {e}")
-    return {"Receita": 0.0, "Despesa": 0.0}
-
-
-def obter_lancamentos_mes(tipo, ano_mes):
-  try:
-    partes = ano_mes.split("-")
-    ano, mes = int(partes[0]), int(partes[1])
-    primeiro_dia = date(ano, mes, 1)
-    ultimo_dia = date(ano, mes, calendar.monthrange(ano, mes)[1])
-
-    conn = conectar_banco()
-    cursor = conn.cursor()
-
-    if tipo.lower() == "receita":
-      cursor.execute(
-          """
-              SELECT data_lancamento, descricao, valor 
-              FROM lancamentos 
-              WHERE LOWER(tipo) = 'receita'
-                AND LOWER(tipo) != 'transferência'
-                AND LOWER(tipo) != 'transf'
-                AND LOWER(descricao) NOT LIKE 'transf%'
-                AND data_lancamento >= %s AND data_lancamento <= %s 
-              ORDER BY data_lancamento DESC;
-          """,
-          (primeiro_dia, ultimo_dia),
-      )
-    else:
-      cursor.execute(
-          """
-              SELECT data_lancamento, descricao, valor 
-              FROM lancamentos 
-              WHERE LOWER(tipo) = 'despesa'
-                AND data_lancamento >= %s AND data_lancamento <= %s 
-              ORDER BY data_lancamento DESC;
-          """,
-          (primeiro_dia, ultimo_dia),
-      )
-
-    res = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return res
-  except Exception as e:
-    st.error(f"Erro nos lançamentos: {e}")
-    return []
 
 
 def calcular_ciclo_fatura(d_date, dia_fechamento):
@@ -229,14 +142,14 @@ def calcular_ciclo_fatura(d_date, dia_fechamento):
 st.title("💰 Meu Controle")
 
 menu = st.radio(
-    "Navegação", ["📊 Resumo do Mês", "💳 Nova Despesa"], horizontal=True
+    "Navegação", ["💳 Faturas dos Cartões", "➕ Nova Despesa"], horizontal=True
 )
 st.divider()
 
 # ==========================================
-# ABA 1: RESUMO DO MÊS E FATURAS DETALHADAS
+# ABA 1: FATURAS DOS CARTÕES (Por Período)
 # ==========================================
-if menu == "📊 Resumo do Mês":
+if menu == "💳 Faturas dos Cartões":
   hoje = datetime.now()
   lista_meses_opcoes = []
   for i in range(-3, 4):
@@ -257,63 +170,13 @@ if menu == "📊 Resumo do Mês":
   )
 
   mes_selecionado = st.selectbox(
-      "📅 Selecionar Período (Mês)",
+      "📅 Selecionar Período da Fatura (Mês)",
       options=lista_meses_opcoes,
       index=indice_atual,
       format_func=formatar_mes_pt,
   )
 
   st.divider()
-
-  resumo = obter_resumo_mes(mes_selecionado)
-  receitas = resumo.get("Receita", 0.0)
-  despesas = resumo.get("Despesa", 0.0)
-  saldo = receitas - despesas
-
-  col1, col2 = st.columns(2)
-  with col1:
-    st.metric(label="🟢 Receitas", value=f"R$ {receitas:,.2f}")
-  with col2:
-    st.metric(label="🔴 Despesas", value=f"R$ {despesas:,.2f}")
-
-  st.metric(
-      label="💼 Saldo do Período",
-      value=f"R$ {saldo:,.2f}",
-      delta=f"R$ {saldo:,.2f}",
-  )
-
-  st.divider()
-
-  with st.expander("🔍 Ver detalhes das Receitas"):
-    lista_receitas = obter_lancamentos_mes("Receita", mes_selecionado)
-    if lista_receitas:
-      for row in lista_receitas:
-        data, desc, val = row[0], row[1], row[2]
-        data_fmt = (
-            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
-            if data
-            else ""
-        )
-        st.markdown(f"**{data_fmt}** - {desc}: `R$ {float(val or 0):,.2f}`")
-    else:
-      st.info("Nenhuma receita registrada neste período.")
-
-  with st.expander("🔍 Ver detalhes das Despesas"):
-    lista_despesas = obter_lancamentos_mes("Despesa", mes_selecionado)
-    if lista_despesas:
-      for row in lista_despesas:
-        data, desc, val = row[0], row[1], row[2]
-        data_fmt = (
-            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
-            if data
-            else ""
-        )
-        st.markdown(f"**{data_fmt}** - {desc}: `R$ {float(val or 0):,.2f}`")
-    else:
-      st.info("Nenhuma despesa registrada neste período.")
-
-  st.divider()
-
   st.subheader("💳 Faturas dos Cartões (Regra de Período)")
 
   cartoes_dict, _ = carregar_cartoes()
@@ -406,7 +269,7 @@ if menu == "📊 Resumo do Mês":
 # ==========================================
 # ABA 2: NOVA DESPESA CARTÃO
 # ==========================================
-elif menu == "💳 Nova Despesa":
+elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
   valor = st.number_input(
@@ -524,20 +387,20 @@ elif menu == "💳 Nova Despesa":
           )
         else:
           cursor.execute(
-                """
+              """
                         INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
                         VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
                     """,
-                (
-                    valor,
-                    data_compra.strftime("%Y-%m-%d"),
-                    desc_base,
-                    id_cat,
-                    id_sub,
-                    id_cartao,
-                    1,
-                ),
-            )
+              (
+                  valor,
+                  data_compra.strftime("%Y-%m-%d"),
+                  desc_base,
+                  id_cat,
+                  id_sub,
+                  id_cartao,
+                  1,
+              ),
+          )
           st.success("✔ Despesa de cartão cadastrada com sucesso!")
 
         conn.commit()
