@@ -48,7 +48,7 @@ def conectar_banco():
     )
 
 
-# --- Funções de Consulta ao Banco (Com Segurança Total) ---
+# --- Funções de Consulta ao Banco ---
 def carregar_cartoes():
   try:
     conn = conectar_banco()
@@ -64,15 +64,14 @@ def carregar_cartoes():
     principal = None
     if res:
       for row in res:
-        if row and len(row) >= 2:
-          cid = str(row[0])
-          cnome = row[1]
-          fechamento = row[2] if len(row) > 2 and row[2] is not None else 24
-          is_principal = row[3] if len(row) > 3 and row[3] is not None else False
+        cid = str(row[0])
+        cnome = row[1]
+        fechamento = row[2] if len(row) > 2 and row[2] is not None else 24
+        is_principal = row[3] if len(row) > 3 and row[3] is not None else False
 
-          cartoes[cnome] = {"id": cid, "fechamento": fechamento}
-          if is_principal:
-            principal = cnome
+        cartoes[cnome] = {"id": cid, "fechamento": fechamento}
+        if is_principal:
+          principal = cnome
 
     if not principal and cartoes:
       principal = list(cartoes.keys())[0]
@@ -95,8 +94,7 @@ def carregar_categorias():
     cats = {}
     if res:
       for row in res:
-        if row and len(row) >= 2:
-          cats[row[1]] = str(row[0])
+        cats[row[1]] = str(row[0])
     return cats
   except Exception as e:
     st.error(f"Erro ao carregar categorias: {e}")
@@ -120,8 +118,7 @@ def carregar_subcategorias(id_categoria):
     subs = {}
     if res:
       for row in res:
-        if row and len(row) >= 2:
-          subs[row[1]] = str(row[0])
+        subs[row[1]] = str(row[0])
     return subs
   except Exception as e:
     st.error(f"Erro ao carregar subcategorias: {e}")
@@ -130,8 +127,6 @@ def carregar_subcategorias(id_categoria):
 
 def obter_resumo_mes(ano_mes):
   try:
-    if not isinstance(ano_mes, str) or "-" not in ano_mes:
-      ano_mes = datetime.now().strftime("%Y-%m")
     partes = ano_mes.split("-")
     ano, mes = int(partes[0]), int(partes[1])
     primeiro_dia = date(ano, mes, 1)
@@ -158,13 +153,12 @@ def obter_resumo_mes(ano_mes):
     totais = {"Receita": 0.0, "Despesa": 0.0}
     if res:
       for row in res:
-        if row and len(row) >= 2:
-          tipo = row[0]
-          valor = row[1]
-          if tipo is not None:
-            tipo_str = str(tipo).strip().capitalize()
-            if tipo_str in totais and valor is not None:
-              totais[tipo_str] = float(valor)
+        tipo = row[0]
+        valor = row[1]
+        if tipo is not None and valor is not None:
+          tipo_str = str(tipo).strip().capitalize()
+          if tipo_str in totais:
+            totais[tipo_str] = float(valor)
     return totais
   except Exception as e:
     st.error(f"Erro no resumo do mês: {e}")
@@ -173,8 +167,6 @@ def obter_resumo_mes(ano_mes):
 
 def obter_lancamentos_mes(tipo, ano_mes):
   try:
-    if not isinstance(ano_mes, str) or "-" not in ano_mes:
-      ano_mes = datetime.now().strftime("%Y-%m")
     partes = ano_mes.split("-")
     ano, mes = int(partes[0]), int(partes[1])
     primeiro_dia = date(ano, mes, 1)
@@ -253,8 +245,6 @@ if menu == "📊 Resumo do Mês":
 
 
   def formatar_mes_pt(ano_mes):
-    if not isinstance(ano_mes, str) or "-" not in ano_mes:
-      return ano_mes
     ano, mes = ano_mes.split("-")
     return f"{meses_pt.get(mes, mes)} de {ano}"
 
@@ -298,14 +288,13 @@ if menu == "📊 Resumo do Mês":
     lista_receitas = obter_lancamentos_mes("Receita", mes_selecionado)
     if lista_receitas:
       for row in lista_receitas:
-        if row and len(row) >= 3:
-          data, desc, val = row[0], row[1], row[2]
-          data_fmt = (
-              datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
-              if data
-              else ""
-          )
-          st.markdown(f"**{data_fmt}** - {desc}: `R$ {float(val or 0):,.2f}`")
+        data, desc, val = row[0], row[1], row[2]
+        data_fmt = (
+            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
+            if data
+            else ""
+        )
+        st.markdown(f"**{data_fmt}** - {desc}: `R$ {float(val or 0):,.2f}`")
     else:
       st.info("Nenhuma receita registrada neste período.")
 
@@ -313,14 +302,13 @@ if menu == "📊 Resumo do Mês":
     lista_despesas = obter_lancamentos_mes("Despesa", mes_selecionado)
     if lista_despesas:
       for row in lista_despesas:
-        if row and len(row) >= 3:
-          data, desc, val = row[0], row[1], row[2]
-          data_fmt = (
-              datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
-              if data
-              else ""
-          )
-          st.markdown(f"**{data_fmt}** - {desc}: `R$ {float(val or 0):,.2f}`")
+        data, desc, val = row[0], row[1], row[2]
+        data_fmt = (
+            datetime.strptime(str(data), "%Y-%m-%d").strftime("%d/%m/%Y")
+            if data
+            else ""
+        )
+        st.markdown(f"**{data_fmt}** - {desc}: `R$ {float(val or 0):,.2f}`")
     else:
       st.info("Nenhuma despesa registrada neste período.")
 
@@ -348,26 +336,31 @@ if menu == "📊 Resumo do Mês":
       faturas_por_cartao = {}
       if todos_lanc_cartoes:
         for row in todos_lanc_cartoes:
-          if row and len(row) >= 5:
-            val, ldata, ldesc, c_nome, c_fech = row[0], row[1], row[2], row[3], row[4]
-            if not ldata:
-              continue
-            d_date = ldata.date() if hasattr(ldata, "date") else ldata
-            fechamento = c_fech or 24
+          val, ldata, ldesc, c_nome, c_fech = (
+              row[0],
+              row[1],
+              row[2],
+              row[3],
+              row[4],
+          )
+          if not ldata:
+            continue
+          d_date = ldata.date() if hasattr(ldata, "date") else ldata
+          fechamento = c_fech or 24
 
-            inicio_ciclo, fim_ciclo = calcular_ciclo_fatura(d_date, fechamento)
-            ciclo_ano_mes = fim_ciclo.strftime("%Y-%m")
+          inicio_ciclo, fim_ciclo = calcular_ciclo_fatura(d_date, fechamento)
+          ciclo_ano_mes = fim_ciclo.strftime("%Y-%m")
 
-            if ciclo_ano_mes == mes_selecionado:
-              if c_nome not in faturas_por_cartao:
-                faturas_por_cartao[c_nome] = {
-                    "total": 0.0,
-                    "inicio": inicio_ciclo,
-                    "fim": fim_ciclo,
-                    "itens": [],
-                }
-              faturas_por_cartao[c_nome]["total"] += float(val or 0)
-              faturas_por_cartao[c_nome]["itens"].append((ldata, ldesc, val))
+          if ciclo_ano_mes == mes_selecionado:
+            if c_nome not in faturas_por_cartao:
+              faturas_por_cartao[c_nome] = {
+                  "total": 0.0,
+                  "inicio": inicio_ciclo,
+                  "fim": fim_ciclo,
+                  "itens": [],
+              }
+            faturas_por_cartao[c_nome]["total"] += float(val or 0)
+            faturas_por_cartao[c_nome]["itens"].append((ldata, ldesc, val))
 
       if faturas_por_cartao:
         for c_nome, info in faturas_por_cartao.items():
@@ -531,20 +524,20 @@ elif menu == "💳 Nova Despesa":
           )
         else:
           cursor.execute(
-              """
+                """
                         INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
                         VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
                     """,
-              (
-                  valor,
-                  data_compra.strftime("%Y-%m-%d"),
-                  desc_base,
-                  id_cat,
-                  id_sub,
-                  id_cartao,
-                  1,
-              ),
-          )
+                (
+                    valor,
+                    data_compra.strftime("%Y-%m-%d"),
+                    desc_base,
+                    id_cat,
+                    id_sub,
+                    id_cartao,
+                    1,
+                ),
+            )
           st.success("✔ Despesa de cartão cadastrada com sucesso!")
 
         conn.commit()
