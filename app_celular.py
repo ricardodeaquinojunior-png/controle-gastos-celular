@@ -3,6 +3,7 @@ from dateutil.relativedelta import relativedelta
 import calendar
 import psycopg2
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Configuração da página para dispositivos móveis
 st.set_page_config(
@@ -141,14 +142,26 @@ def calcular_ciclo_fatura(d_date, dia_fechamento):
 st.title("💰 Meu Controle")
 
 menu = st.radio(
-    "Navegação", ["💳 Faturas dos Cartões", "➕ Nova Despesa"], horizontal=True
+    "Navegação",
+    ["💳 Faturas dos Cartões", "➕ Nova Despesa", "🚪 Sair"],
+    horizontal=True,
 )
 st.divider()
 
 # ==========================================
+# OPÇÃO: SAIR DO APLICATIVO
+# ==========================================
+if menu == "🚪 Sair":
+  st.success(
+      "🚪 Sessão encerrada com sucesso! Você já pode fechar esta aba do"
+      " navegador."
+  )
+  st.stop()
+
+# ==========================================
 # ABA 1: FATURAS DOS CARTÕES (Por Período)
 # ==========================================
-if menu == "💳 Faturas dos Cartões":
+elif menu == "💳 Faturas dos Cartões":
   hoje = datetime.now()
   lista_meses_opcoes = []
   for i in range(-3, 4):
@@ -271,36 +284,40 @@ if menu == "💳 Faturas dos Cartões":
 elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
-
-  # Função auxiliar para formatar o valor monetário enquanto o usuário digita
-  def formatar_moeda_input():
-    val_str = "".join(filter(str.isdigit, st.session_state.get("raw_valor", "")))
-    if not val_str:
-      st.session_state.input_valor_formatado = ""
-      st.session_state.valor_numerico = 0.0
-      return
-    val_int = int(val_str)
-    val_float = val_int / 100.0
-    st.session_state.valor_numerico = val_float
-    st.session_state.input_valor_formatado = f"R$ {val_float:,.2f}".replace(
-        ",", "X"
-    ).replace(".", ",").replace("X", ".")
-
-
-  if "raw_valor" not in st.session_state:
-    st.session_state.raw_valor = ""
-  if "input_valor_formatado" not in st.session_state:
-    st.session_state.input_valor_formatado = ""
   if "valor_numerico" not in st.session_state:
     st.session_state.valor_numerico = 0.0
 
-  st.text_input(
-      "Valor da despesa cartão (R$)",
-      value=st.session_state.input_valor_formatado,
-      key="raw_valor",
-      on_change=formatar_moeda_input,
-      placeholder="Digite o valor (ex: 1550 para R$ 15,50)",
-  )
+  st.text("Valor da despesa cartão (R$)")
+
+  money_input_html = f"""
+    <div style="margin-bottom: 15px;">
+        <input type="text" id="campo_valor" placeholder="R$ 0,00" value="{f"R$ {st.session_state.valor_numerico:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if st.session_state.valor_numerico > 0 else ''}" 
+        style="width: 100%; padding: 10px; font-size: 18px; border: 1px solid #ccc; border-radius: 5px; background-color: #0e1117; color: white;" />
+    </div>
+    <script>
+        const input = document.getElementById('campo_valor');
+        input.focus();
+
+        input.addEventListener('input', function(e) {{
+            let value = input.value.replace(/\\D/g, "");
+            if (value === "") {{
+                input.value = "";
+                window.parent.postMessage({{"type": "streamlit:setComponentValue", "value": 0}}, "*");
+                return;
+            }}
+            let number = parseInt(value) / 100;
+            let formatted = number.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
+            input.value = formatted;
+            
+            window.parent.postMessage({{"type": "streamlit:setComponentValue", "value": number}}, "*");
+        }});
+    </script>
+    """
+
+  val_componente = components.html(money_input_html, height=60)
+
+  if "valor_numerico" not in st.session_state:
+    st.session_state.valor_numerico = 0.0
 
   valor = st.session_state.valor_numerico
 
