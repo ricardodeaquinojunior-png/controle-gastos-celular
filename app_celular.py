@@ -3,7 +3,6 @@ from dateutil.relativedelta import relativedelta
 import calendar
 import psycopg2
 import streamlit as st
-import streamlit.components.v1 as components
 
 # Configuração da página para dispositivos móveis
 st.set_page_config(
@@ -283,44 +282,14 @@ elif menu == "💳 Faturas dos Cartões":
 elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
-  if "valor_numerico" not in st.session_state:
-    st.session_state.valor_numerico = 0.0
-
-  st.text("Valor da despesa cartão (R$)")
-
-  money_input_html = f"""
-    <div style="margin-bottom: 15px;">
-        <input type="text" id="campo_valor" placeholder="R$ 0,00" value="{f"R$ {st.session_state.valor_numerico:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if st.session_state.valor_numerico > 0 else ''}" 
-        style="width: 100%; padding: 10px; font-size: 18px; border: 1px solid #ccc; border-radius: 5px; background-color: #0e1117; color: white;" />
-    </div>
-    <script>
-        const input = document.getElementById('campo_valor');
-        input.focus();
-
-        input.addEventListener('input', function(e) {{
-            let value = input.value.replace(/\\D/g, "");
-            if (value === "") {{
-                input.value = "";
-                window.parent.postMessage({{"type": "streamlit:setComponentValue", "value": 0}}, "*");
-                return;
-            }}
-            let number = parseInt(value) / 100;
-            let formatted = number.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
-            input.value = formatted;
-            
-            window.parent.postMessage({{"type": "streamlit:setComponentValue", "value": number}}, "*");
-        }});
-    </script>
-    """
-
-  val_componente = components.html(money_input_html, height=60)
-
-  if val_componente is not None and isinstance(val_componente, (int, float)):
-    if st.session_state.valor_numerico != float(val_componente):
-      st.session_state.valor_numerico = float(val_componente)
-      st.rerun()
-
-  valor = st.session_state.valor_numerico
+  # Campo numérico nativo robusto e estável do Streamlit
+  valor = st.number_input(
+      "Valor da despesa cartão (R$)",
+      min_value=0.0,
+      format="%.2f",
+      step=10.0,
+      value=0.0,
+  )
 
   if "str_data_compra" not in st.session_state:
     st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
