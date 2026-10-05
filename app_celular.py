@@ -3,6 +3,7 @@ from dateutil.relativedelta import relativedelta
 import calendar
 import psycopg2
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Configuração da página para dispositivos móveis
 st.set_page_config(
@@ -159,7 +160,7 @@ if menu == "🚪 Sair":
 # ==========================================
 # ABA 1: FATURAS DOS CARTÕES (Por Período)
 # ==========================================
-elif menu == "💳 Faturas dos Cartões":
+if menu == "💳 Faturas dos Cartões":
   hoje = datetime.now()
   lista_meses_opcoes = []
   for i in range(-3, 4):
@@ -282,40 +283,43 @@ elif menu == "💳 Faturas dos Cartões":
 elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
-  # Inicializa o valor da despesa na sessão se não existir
-  if "str_valor" not in st.session_state:
-    st.session_state.str_valor = ""
+  if "valor_numerico" not in st.session_state:
+    st.session_state.valor_numerico = 0.0
 
+  st.text("Valor da despesa cartão (R$)")
 
-  # Função para processar a digitação e formatar os números como moeda brasileira em tempo real
-  def formatar_valor_digitado():
-    digitos = "".join(
-        filter(str.isdigit, st.session_state.get("input_val_texto", ""))
-    )
-    if not digitos:
-      st.session_state.str_valor = ""
-      st.session_state.valor_real = 0.0
-    else:
-      num = int(digitos) / 100.0
-      st.session_state.valor_real = num
-      st.session_state.str_valor = (
-          f"R$ {num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-      )
+  # Componente HTML aprimorado com foco automático e máscara monetária sem perda de dados
+  money_input_html = f"""
+    <div style="margin-bottom: 15px;">
+        <input type="text" id="campo_valor" placeholder="R$ 0,00" value="{f"R$ {st.session_state.valor_numerico:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if st.session_state.valor_numerico > 0 else ''}" 
+        style="width: 100%; padding: 10px; font-size: 18px; border: 1px solid #ccc; border-radius: 5px; background-color: #0e1117; color: white;" inputmode="numeric" />
+    </div>
+    <script>
+        const input = document.getElementById('campo_valor');
+        input.focus();
 
+        input.addEventListener('input', function(e) {{
+            let value = input.value.replace(/\\D/g, "");
+            if (value === "") {{
+                input.value = "";
+                window.parent.postMessage({{"type": "streamlit:setComponentValue", "value": 0}}, "*");
+                return;
+            }}
+            let number = parseInt(value) / 100;
+            let formatted = number.toLocaleString('pt-BR', {{ style: 'currency', currency: 'BRL' }});
+            input.value = formatted;
+            
+            window.parent.postMessage({{"type": "streamlit:setComponentValue", "value": number}}, "*");
+        ));
+    </script>
+    """
 
-  # Campo de texto otimizado para celulares que aceita a digitação fluida
-  val_exibicao = st.session_state.get("str_valor", "")
+  val_componente = components.html(money_input_html, height=60)
 
-  st.text_input(
-      "Valor da despesa cartão (R$)",
-      value=val_exibicao,
-      key="input_val_texto",
-      on_change=formatar_valor_digitado,
-      placeholder="Digite o valor (ex: 1550 para R$ 15,50)",
-  )
+  if val_componente is not None and isinstance(val_componente, (int, float)):
+    st.session_state.valor_numerico = float(val_componente)
 
-  # Garante que a variável valor pegue o número real armazenado na sessão
-  valor = st.session_state.get("valor_real", 0.0)
+  valor = st.session_state.valor_numerico
 
   if "str_data_compra" not in st.session_state:
     st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
@@ -373,6 +377,13 @@ elif menu == "➕ Nova Despesa":
   id_sub = subs_dict.get(sub_selecionada) if sub_selecionada else None
 
   st.divider()
+
+  # Mensagem de orientação para garantir que o valor seja registrado antes de clicar
+  if valor <= 0:
+    st.info(
+        "💡 Digite o valor da despesa (ex: 1550 para R$ 15,50) e clique fora"
+        " ou aguarde um instante para atualizar."
+    )
 
   if st.button("✔ Cadastrar Despesa", type="primary", use_container_width=True):
     if not descricao.strip():
