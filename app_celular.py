@@ -138,11 +138,14 @@ def calcular_ciclo_fatura(d_date, dia_fechamento):
   return inicio, fim
 
 
-# --- Menu de Navegação Superior ---
+# --- Cabeçalho e Menu Superior Discreto ---
 st.title("💰 Meu Controle")
 
 menu = st.radio(
-    "Navegação", ["💳 Faturas dos Cartões", "➕ Nova Despesa"], horizontal=True
+    "Navegação",
+    ["➕ Nova Despesa", "💳 Faturas dos Cartões"],
+    horizontal=True,
+    label_visibility="collapsed",
 )
 st.divider()
 
@@ -267,7 +270,7 @@ if menu == "💳 Faturas dos Cartões":
     st.info("Nenhum cartão cadastrado.")
 
 # ==========================================
-# ABA 2: NOVA DESPESA CARTÃO
+# ABA 2: NOVA DESPESA CARTÃO (Padrão de Abertura)
 # ==========================================
 elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
@@ -281,17 +284,26 @@ elif menu == "➕ Nova Despesa":
 
 
   def formatar_moeda_input():
-    val_str = "".join(filter(str.isdigit, st.session_state.get("raw_valor", "")))
-    if not val_str:
+    digitos = "".join(
+        filter(str.isdigit, st.session_state.get("raw_valor", ""))
+    )
+    if not digitos:
       st.session_state.input_valor_formatado = "R$ 0,00"
       st.session_state.valor_numerico = 0.0
+      st.session_state.raw_valor = ""
       return
-    val_int = int(val_str)
+
+    val_int = int(digitos)
     val_float = val_int / 100.0
     st.session_state.valor_numerico = val_float
-    st.session_state.input_valor_formatado = f"R$ {val_float:,.2f}".replace(
-        ",", "X"
-    ).replace(".", ",").replace("X", ".")
+    formatado = (
+        f"R$ {val_float:,.2f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+    st.session_state.input_valor_formatado = formatado
+    st.session_state.raw_valor = formatado
 
 
   st.text_input(
@@ -299,10 +311,10 @@ elif menu == "➕ Nova Despesa":
       value=st.session_state.input_valor_formatado,
       key="raw_valor",
       on_change=formatar_moeda_input,
-      placeholder="Digite o valor (ex: 1550 para R$ 15,50)",
+      placeholder="Digite apenas os números...",
   )
 
-  # Script JavaScript para garantir o foco automático imediato no campo de valor
+  # Script JavaScript para forçar o foco automático no campo de valor ao carregar a página
   focus_js = """
     <script>
         setTimeout(function() {
@@ -310,7 +322,7 @@ elif menu == "➕ Nova Despesa":
             if (inputs.length > 0) {
                 inputs[0].focus();
             }
-        }, 200);
+        }, 300);
     </script>
     """
   components.html(focus_js, height=0)
