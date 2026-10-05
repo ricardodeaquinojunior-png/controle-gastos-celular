@@ -3,7 +3,6 @@ from dateutil.relativedelta import relativedelta
 import calendar
 import psycopg2
 import streamlit as st
-import streamlit.components.v1 as components
 import matplotlib.pyplot as plt
 
 # Configuração da página para dispositivos móveis
@@ -12,20 +11,20 @@ st.set_page_config(
 )
 
 
-# Dicionário para garantir meses em português
+# Dicionário seguro para converter meses em português sem corromper anos
 meses_pt = {
-    "01": "Janeiro",
-    "02": "Fevereiro",
-    "03": "Março",
-    "04": "Abril",
-    "05": "Maio",
-    "06": "Junho",
-    "07": "Julho",
-    "08": "Agosto",
-    "09": "Setembro",
-    "10": "Outubro",
-    "11": "Novembro",
-    "12": "Dezembro",
+    1: "Janeiro",
+    2: "Fevereiro",
+    3: "Março",
+    4: "Abril",
+    5: "Maio",
+    6: "Junho",
+    7: "Julho",
+    8: "Agosto",
+    9: "Setembro",
+    10: "Outubro",
+    11: "Novembro",
+    12: "Dezembro",
 }
 
 
@@ -163,7 +162,7 @@ if menu == "💳 Faturas dos Cartões":
 
   def formatar_mes_pt(ano_mes):
     ano, mes = ano_mes.split("-")
-    return f"{meses_pt.get(mes, mes)} de {ano}"
+    return f"{meses_pt.get(int(mes), mes)} de {ano}"
 
 
   mes_atual_str = hoje.strftime("%Y-%m")
@@ -314,18 +313,6 @@ elif menu == "➕ Nova Despesa":
       on_change=formatar_moeda_input,
       placeholder="Digite apenas os números...",
   )
-
-  focus_js = """
-    <script>
-        setTimeout(function() {
-            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            if (inputs.length > 0) {
-                inputs[0].focus();
-            }
-        }, 300);
-    </script>
-    """
-  components.html(focus_js, height=0)
 
   valor = st.session_state.valor_numerico
 
@@ -491,7 +478,7 @@ elif menu == "📊 Gráficos por Categoria":
 
   sel_cartao = st.selectbox("💳 Cartão / Origem", options=nomes_cartoes)
 
-  # 2. Gerar Ciclos de Fatura no formato mobile
+  # 2. Gerar Ciclos de Fatura formatados corretamente em português
   is_cartao = sel_cartao not in ["Todos", "Despesas Gerais (Sem Cartão)"]
   cartao_id = map_cartoes.get(sel_cartao) if is_cartao else None
 
@@ -540,8 +527,11 @@ elif menu == "📊 Gráficos por Categoria":
         max_d_fim = calendar.monthrange(r_ano, r_mes)[1]
         data_fim = date(r_ano, r_mes, min(fechamento_dia, max_d_fim))
         data_ini = data_fim - relativedelta(months=1) + relativedelta(days=1)
+        
+        # Formatação limpa segura baseada no dicionário numérico
+        mes_nome = meses_pt.get(data_fim.month, str(data_fim.month))
         rotulo = (
-            f"Fatura {data_fim.strftime('%m/%Y')} ({data_ini.strftime('%d/%m/%Y')}"
+            f"Fatura {mes_nome}/{data_fim.year} ({data_ini.strftime('%d/%m/%Y')}"
             f" a {data_fim.strftime('%d/%m/%Y')})"
         )
         ciclos.append((rotulo, data_ini, data_fim))
@@ -552,9 +542,8 @@ elif menu == "📊 Gráficos por Categoria":
     hoje = date.today()
     for i in range(-3, 12):
       m_ref = hoje + relativedelta(months=i)
-      rotulo = m_ref.strftime("%m/%Y")
-      for eng, pt in meses_pt.items():
-        rotulo = rotulo.replace(eng, pt)
+      mes_nome = meses_pt.get(m_ref.month, str(m_ref.month))
+      rotulo = f"{mes_nome} de {m_ref.year}"
       ciclos.append((rotulo, m_ref.strftime("%Y-%m")))
 
   if not ciclos:
