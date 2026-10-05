@@ -4,6 +4,7 @@ import calendar
 import psycopg2
 import streamlit as st
 import streamlit.components.v1 as components
+import matplotlib.pyplot as plt
 
 # Configuração da página para dispositivos móveis
 st.set_page_config(
@@ -143,7 +144,7 @@ st.title("💰 Meu Controle")
 
 menu = st.radio(
     "Navegação",
-    ["➕ Nova Despesa", "💳 Faturas dos Cartões"],
+    ["➕ Nova Despesa", "💳 Faturas dos Cartões", "📊 Gráficos por Categoria"],
     horizontal=True,
     label_visibility="collapsed",
 )
@@ -314,7 +315,6 @@ elif menu == "➕ Nova Despesa":
       placeholder="Digite apenas os números...",
   )
 
-  # Script JavaScript para forçar o foco automático no campo de valor ao carregar a página
   focus_js = """
     <script>
         setTimeout(function() {
@@ -457,3 +457,399 @@ elif menu == "➕ Nova Despesa":
         conn.close()
       except Exception as ex:
         st.error(f"Erro ao salvar no banco de dados: {ex}")
+
+# ==========================================
+# ABA 3: GRÁFICOS POR CATEGORIA E SUBCATEGORIA
+# ==========================================
+elif menu == "📊 Gráficos por Categoria":
+  st.markdown("### 📊 Análise Gráfica")
+
+  # 1. Carregar Cartões para o Filtro Mobile
+  try:
+    conn_g = conectar_banco()
+    cursor_g = conn_g.cursor()
+    cursor_g.execute(
+        "SELECT id, nome, dia_fechamento, dia_vencimento FROM cartoes ORDER BY"
+        " nome;"
+    )
+    cartoes_db = cursor_g.fetchall()
+    cursor_g.close()
+    conn_g.close()
+  except Exception:
+    cartoes_db = []
+
+  map_cartoes = {}
+  map_cartao_detalhes = {}
+  nomes_cartoes = ["Todos", "Despesas Gerais (Sem Cartão)"]
+  for cid, cnome, c_fech, c_venc in cartoes_db:
+    map_cartoes[cnome] = str(cid)
+    map_cartao_detalhes[str(cid)] = {
+        "fechamento": c_fech or 24,
+        "vencimento": c_venc or 1,
+    }
+    nomes_cartoes.append(cnome)
+
+  sel_cartao = st.selectbox("💳 Cartão / Origem", options=nomes_cartoes)
+
+  # 2. Gerar Ciclos de Fatura no formato mobile
+  is_cartao = sel_cartao not in ["Todos", "Despesas Gerais (Sem Cartão)"]
+  cartao_id = map_cartoes.get(sel_cartao) if is_cartao else None
+
+  ciclos = []
+  if is_cartao and cartao_id:
+    detalhes = map_cartao_detalhes.get(cartao_id, {"fechamento": 24})
+    fechamento_dia = detalhes["fechamento"]
+    try:
+      conn_c = conectar_banco()
+      cursor_c = conn_c.cursor()
+      cursor_c.execute(
+          "SELECT MIN(data_lancamento), MAX(data_lancamento) FROM lancamentos"
+          " WHERE id_cartao = %s;",
+          (cartao_id,),
+      )
+      res_c = cursor_c.fetchone()
+      cursor_c.close()
+      conn_c.close()
+
+      def para_date(val):
+        if not val:
+          return None
+        if hasattr(val, "date"):
+          return val.date()
+        return val
+
+      min_data = (
+          para_date(res_c[0])
+          if res_c and res_c[0]
+          else date.today() - relativedelta(months=3)
+      )
+      max_data = (
+          para_date(res_c[1])
+          if res_c and res_c[1]
+          else date.today() + relativedelta(months=6)
+      )
+
+      curr_date = date(min_data.year, min_data.month, 1)
+      end_date = date(max_data.year, max_data.month, 1) + relativedelta(
+          months=2
+      )
+
+      while curr_date <= end_date:
+        r_ano = curr_date.year
+        r_mes = curr_date.month
+        max_d_fim = calendar.monthrange(r_ano, r_mes)[1]
+        data_fim = date(r_ano, r_mes, min(fechamento_dia, max_d_fim))
+        data_ini = data_fim - relativedelta(months=1) + relativedelta(days=1)
+        rotulo = (
+            f"Fatura {data_fim.strftime('%m/%Y')} ({data_ini.strftime('%d/%m/%Y')}"
+            f" a {data_fim.strftime('%d/%m/%Y')})"
+        )
+        ciclos.append((rotulo, data_ini, data_fim))
+        curr_date += relativedelta(months=1)
+    except Exception:
+      pass
+  else:
+    hoje = date.today()
+    for i in range(-3, 12):
+      m_ref = hoje + relativedelta(months=i)
+      rotulo = m_ref.strftime("%m/%Y")
+      for eng, pt in meses_pt.items():
+        rotulo = rotulo.replace(eng, pt)
+      ciclos.append((rotulo, m_ref.strftime("%Y-%m")))
+
+  if not ciclos:
+    ciclos = [("Mês Atual", datetime.now().strftime("%Y-%m"))]
+
+  sel_ciclo_txt = st.selectbox(
+      "📅 Período / Ciclo", options=[c[0] for c in ciclos]
+  )
+  ciclo_selecionado = next(c for c in ciclos if c[0] == sel_ciclo_txt)
+
+  st.divider()
+
+  # 3. Consulta ao Banco para os Gráficos
+  try:
+    conn_db = conectar_banco()
+    cursor_db = conn_db.cursor()
+
+    dados_cat = []
+    if is_cartao and cartao_id:
+      _, d_ini, d_fim = ciclo_selecionado
+      cursor_db.execute(
+          """
+                SELECT c.id_categoria, c.descricao, SUM(l.valor) 
+                FROM lancamentos l
+                JOIN categorias c ON l.id_categoria = c.id_categoria
+                WHERE l.tipo = 'Despesa' AND l.id_cartao = %s 
+                  AND l.data_lancamento >= %s AND l.data_lancamento <= %s
+                GROUP BY c.id_categoria, c.descricao 
+                ORDER BY SUM(l.valor) DESC;
+            """,
+          (cartao_id, d_ini, d_fim),
+      )
+      dados_cat = cursor_db.fetchall()
+
+    elif sel_cartao == "Despesas Gerais (Sem Cartão)":
+      _, mes_ano_str = ciclo_selecionado
+      cursor_db.execute(
+          """
+                SELECT c.id_categoria, c.descricao, SUM(l.valor) 
+                FROM lancamentos l
+                JOIN categorias c ON l.id_categoria = c.id_categoria
+                WHERE l.tipo = 'Despesa' AND l.id_cartao IS NULL 
+                  AND TO_CHAR(l.data_lancamento, 'YYYY-MM') = %s
+                GROUP BY c.id_categoria, c.descricao 
+                ORDER BY SUM(l.valor) DESC;
+            """,
+          (mes_ano_str,),
+      )
+      dados_cat = cursor_db.fetchall()
+
+    else:
+      _, mes_ano_str = ciclo_selecionado
+      ano_sel, mes_sel = map(int, mes_ano_str.split("-"))
+      acumulador_cats = {}
+
+      for cid, det in map_cartao_detalhes.items():
+        fechamento_dia = det["fechamento"]
+        ref_date = date(
+            ano_sel,
+            mes_sel,
+            min(15, calendar.monthrange(ano_sel, mes_sel)[1]),
+        )
+        d_ini, d_fim = calcular_ciclo_fatura(ref_date, fechamento_dia)
+        cursor_db.execute(
+            """
+                    SELECT c.id_categoria, c.descricao, SUM(l.valor) 
+                    FROM lancamentos l
+                    JOIN categorias c ON l.id_categoria = c.id_categoria
+                    WHERE l.tipo = 'Despesa' AND l.id_cartao = %s 
+                      AND l.data_lancamento >= %s AND l.data_lancamento <= %s
+                    GROUP BY c.id_categoria, c.descricao;
+                """,
+            (cid, d_ini, d_fim),
+        )
+        for cat_id, cat_desc, val in cursor_db.fetchall():
+          v_f = float(val or 0)
+          if cat_id in acumulador_cats:
+            acumulador_cats[cat_id][1] += v_f
+          else:
+            acumulador_cats[cat_id] = [cat_desc, v_f]
+
+      cursor_db.execute(
+          """
+                SELECT c.id_categoria, c.descricao, SUM(l.valor) 
+                FROM lancamentos l
+                JOIN categorias c ON l.id_categoria = c.id_categoria
+                WHERE l.tipo = 'Despesa' AND l.id_cartao IS NULL 
+                  AND TO_CHAR(l.data_lancamento, 'YYYY-MM') = %s
+                GROUP BY c.id_categoria, c.descricao;
+            """,
+          (mes_ano_str,),
+      )
+      for cat_id, cat_desc, val in cursor_db.fetchall():
+        v_f = float(val or 0)
+        if cat_id in acumulador_cats:
+          acumulador_cats[cat_id][1] += v_f
+        else:
+          acumulador_cats[cat_id] = [cat_desc, v_f]
+
+      dados_cat = [
+          (cid, dados[0], dados[1]) for cid, dados in acumulador_cats.items()
+      ]
+      dados_cat.sort(key=lambda x: x[2], reverse=True)
+
+    if dados_cat:
+      cats = [item[1] for item in dados_cat]
+      valores_cat = [float(item[2]) for item in dados_cat]
+      soma_total = sum(valores_cat)
+
+      # Texto informativo do total
+      valor_fmt = (
+          f"R$ {soma_total:,.2f}"
+          .replace(",", "X")
+          .replace(".", ",")
+          .replace("X", ".")
+      )
+      if is_cartao:
+        st.info(
+            f"💳 Total das despesas do cartão **{sel_cartao}**: **{valor_fmt}**"
+        )
+      elif sel_cartao == "Despesas Gerais (Sem Cartão)":
+        st.info(
+            f"📂 Total das despesas gerais no período: **{valor_fmt}**"
+        )
+      else:
+        st.info(
+            f"📊 Total geral de gastos (cartões + gerais): **{valor_fmt}**"
+        )
+
+      # Gráfico 1: Barras Verticais (Categorias)
+      fig1, ax1 = plt.subplots(figsize=(8, 4.5))
+      bars1 = ax1.bar(
+          cats,
+          valores_cat,
+          color=["#2B6CB0", "#319795", "#D69E2E", "#DD6B20", "#C53030"],
+      )
+      ax1.set_title(
+          f"Despesas por Categoria ({sel_cartao})",
+          fontsize=10,
+          fontweight="bold",
+          color="#1A365D",
+      )
+      ax1.tick_params(axis="x", labelsize=8, rotation=30)
+      ax1.tick_params(axis="y", labelsize=8)
+      ax1.grid(axis="y", linestyle=":", alpha=0.6)
+
+      for bar in bars1:
+        h = bar.get_height()
+        ax1.annotate(
+            f"R$ {h:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+            xy=(bar.get_x() + bar.get_width() / 2, h),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            fontweight="bold",
+            rotation=25,
+        )
+
+      fig1.tight_layout()
+      st.pyplot(fig1)
+
+      # Seleção interativa da Categoria para ver as Subcategorias no celular
+      nomes_cats_disponiveis = [item[1] for item in dados_cat]
+      cat_escolhida_nome = st.selectbox(
+          "🔍 Escolha a Categoria para ver as Subcategorias",
+          options=nomes_cats_disponiveis,
+      )
+      cat_escolhida_id = next(
+          item[0] for item in dados_cat if item[1] == cat_escolhida_nome
+      )
+
+      # Buscar Subcategorias
+      dados_sub = []
+      if is_cartao and cartao_id:
+        _, d_ini, d_fim = ciclo_selecionado
+        cursor_db.execute(
+            """
+                    SELECT s.descricao, SUM(l.valor) 
+                    FROM lancamentos l
+                    JOIN subcategorias s ON l.id_subcategoria = s.id_subcategoria
+                    WHERE l.tipo = 'Despesa' AND l.id_cartao = %s AND l.id_categoria = %s
+                      AND l.data_lancamento >= %s AND l.data_lancamento <= %s
+                    GROUP BY s.descricao ORDER BY SUM(l.valor) ASC;
+                """,
+            (cartao_id, cat_escolhida_id, d_ini, d_fim),
+        )
+        dados_sub = cursor_db.fetchall()
+      elif sel_cartao == "Despesas Gerais (Sem Cartão)":
+        _, mes_ano_str = ciclo_selecionado
+        cursor_db.execute(
+            """
+                    SELECT s.descricao, SUM(l.valor) 
+                    FROM lancamentos l
+                    JOIN subcategorias s ON l.id_subcategoria = s.id_subcategoria
+                    WHERE l.tipo = 'Despesa' AND l.id_cartao IS NULL AND l.id_categoria = %s
+                      AND TO_CHAR(l.data_lancamento, 'YYYY-MM') = %s
+                    GROUP BY s.descricao ORDER BY SUM(l.valor) ASC;
+                """,
+            (cat_escolhida_id, mes_ano_str),
+        )
+        dados_sub = cursor_db.fetchall()
+      else:
+        _, mes_ano_str = ciclo_selecionado
+        ano_sel, mes_sel = map(int, mes_ano_str.split("-"))
+        acumulador_subs = {}
+
+        for cid, det in map_cartao_detalhes.items():
+          fechamento_dia = det["fechamento"]
+          ref_date = date(
+              ano_sel,
+              mes_sel,
+              min(15, calendar.monthrange(ano_sel, mes_sel)[1]),
+          )
+          d_ini, d_fim = calcular_ciclo_fatura(ref_date, fechamento_dia)
+          cursor_db.execute(
+              """
+                        SELECT s.descricao, SUM(l.valor) 
+                        FROM lancamentos l
+                        JOIN subcategorias s ON l.id_subcategoria = s.id_subcategoria
+                        WHERE l.tipo = 'Despesa' AND l.id_cartao = %s AND l.id_categoria = %s
+                          AND l.data_lancamento >= %s AND l.data_lancamento <= %s
+                        GROUP BY s.descricao;
+                    """,
+              (cid, cat_escolhida_id, d_ini, d_fim),
+          )
+          for sub_desc, val in cursor_db.fetchall():
+            v_f = float(val or 0)
+            if sub_desc in acumulador_subs:
+              acumulador_subs[sub_desc] += v_f
+            else:
+              acumulador_subs[sub_desc] = v_f
+
+        cursor_db.execute(
+            """
+                    SELECT s.descricao, SUM(l.valor) 
+                    FROM lancamentos l
+                    JOIN subcategorias s ON l.id_subcategoria = s.id_subcategoria
+                    WHERE l.tipo = 'Despesa' AND l.id_cartao IS NULL AND l.id_categoria = %s
+                      AND TO_CHAR(l.data_lancamento, 'YYYY-MM') = %s
+                    GROUP BY s.descricao;
+                """,
+            (cat_escolhida_id, mes_ano_str),
+        )
+        for sub_desc, val in cursor_db.fetchall():
+          v_f = float(val or 0)
+          if sub_desc in acumulador_subs:
+            acumulador_subs[sub_desc] += v_f
+          else:
+            acumulador_subs[sub_desc] = v_f
+
+        dados_sub = [
+            (s_desc, s_val) for s_desc, s_val in acumulador_subs.items()
+        ]
+        dados_sub.sort(key=lambda x: x[1])
+
+      if dados_sub:
+        subs = [item[0] for item in dados_sub]
+        valores_sub = [float(item[1]) for item in dados_sub]
+
+        # Gráfico 2: Barras Horizontais (Subcategorias)
+        fig2, ax2 = plt.subplots(figsize=(8, 4))
+        bars2 = ax2.barh(subs, valores_sub, color="#805AD5")
+        ax2.set_title(
+            f"Subcategorias de: {cat_escolhida_nome}",
+            fontsize=10,
+            fontweight="bold",
+            color="#1A365D",
+        )
+        ax2.tick_params(axis="both", labelsize=8)
+        ax2.grid(axis="x", linestyle=":", alpha=0.6)
+
+        for bar in bars2:
+          w = bar.get_width()
+          ax2.annotate(
+              f"R$ {w:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+              xy=(w, bar.get_y() + bar.get_height() / 2),
+              xytext=(5, 0),
+              textcoords="offset points",
+              ha="left",
+              va="center",
+              fontsize=8,
+              fontweight="bold",
+          )
+
+        fig2.tight_layout()
+        st.pyplot(fig2)
+      else:
+        st.info(f"Nenhuma subcategoria registrada para '{cat_escolhida_nome}'.")
+
+    else:
+      st.info("Nenhuma despesa encontrada para este filtro e período.")
+
+    cursor_db.close()
+    conn_db.close()
+  except Exception as e:
+    st.error(f"Erro ao gerar gráficos: {e}")
