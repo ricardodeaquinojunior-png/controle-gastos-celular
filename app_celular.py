@@ -282,14 +282,40 @@ elif menu == "💳 Faturas dos Cartões":
 elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
-  # Campo numérico nativo robusto e estável do Streamlit
-  valor = st.number_input(
+  # Inicializa o valor da despesa na sessão se não existir
+  if "str_valor" not in st.session_state:
+    st.session_state.str_valor = ""
+
+
+  # Função para processar a digitação e formatar os números como moeda brasileira em tempo real
+  def formatar_valor_digitado():
+    digitos = "".join(
+        filter(str.isdigit, st.session_state.get("input_val_texto", ""))
+    )
+    if not digitos:
+      st.session_state.str_valor = ""
+      st.session_state.valor_real = 0.0
+    else:
+      num = int(digitos) / 100.0
+      st.session_state.valor_real = num
+      st.session_state.str_valor = (
+          f"R$ {num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+      )
+
+
+  # Campo de texto otimizado para celulares que aceita a digitação fluida
+  val_exibicao = st.session_state.get("str_valor", "")
+
+  st.text_input(
       "Valor da despesa cartão (R$)",
-      min_value=0.0,
-      format="%.2f",
-      step=10.0,
-      value=0.0,
+      value=val_exibicao,
+      key="input_val_texto",
+      on_change=formatar_valor_digitado,
+      placeholder="Digite o valor (ex: 1550 para R$ 15,50)",
   )
+
+  # Garante que a variável valor pegue o número real armazenado na sessão
+  valor = st.session_state.get("valor_real", 0.0)
 
   if "str_data_compra" not in st.session_state:
     st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
