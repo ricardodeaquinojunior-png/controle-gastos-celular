@@ -27,25 +27,24 @@ meses_pt = {
 }
 
 
-# Função de conexão inteligente (Pooler)
+# Função de conexão inteligente (com fallback direto para a sua string de conexão)
 def conectar_banco():
-  if "supabase" in st.secrets:
-    db_conf = st.secrets["supabase"]
-    return psycopg2.connect(
-        host=db_conf["host"],
-        database=db_conf["database"],
-        user=db_conf["user"],
-        password=db_conf["password"],
-        port=db_conf["port"],
-    )
-  else:
-    return psycopg2.connect(
-        host="aws-0-us-east-1.pooler.supabase.com",
-        database="postgres",
-        user="postgres.vihsucqqzeaestnynffz",
-        password=r"gPAc6c9P+_ZV2u$",
-        port=6543,
-    )
+  try:
+    if "supabase" in st.secrets:
+      db_conf = st.secrets["supabase"]
+      return psycopg2.connect(
+          host=db_conf["host"],
+          database=db_conf["database"],
+          user=db_conf["user"],
+          password=db_conf["password"],
+          port=db_conf["port"],
+      )
+  except Exception:
+    pass
+
+  # Conexão direta padrão para funcionamento local imediato
+  DATABASE_URL = "postgresql://postgres:gPAc6c9P+_ZV2u$@db.vihsucqqzeaestnynffz.supabase.co:5432/postgres"
+  return psycopg2.connect(DATABASE_URL)
 
 
 # --- Funções de Consulta ao Banco ---
@@ -272,13 +271,38 @@ if menu == "💳 Faturas dos Cartões":
 elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
-  valor = st.number_input(
+
+  # Função auxiliar para formatar o valor monetário enquanto o usuário digita
+  def formatar_moeda_input():
+    val_str = "".join(filter(str.isdigit, st.session_state.get("raw_valor", "")))
+    if not val_str:
+      st.session_state.input_valor_formatado = ""
+      st.session_state.valor_numerico = 0.0
+      return
+    val_int = int(val_str)
+    val_float = val_int / 100.0
+    st.session_state.valor_numerico = val_float
+    st.session_state.input_valor_formatado = f"R$ {val_float:,.2f}".replace(
+        ",", "X"
+    ).replace(".", ",").replace("X", ".")
+
+
+  if "raw_valor" not in st.session_state:
+    st.session_state.raw_valor = ""
+  if "input_valor_formatado" not in st.session_state:
+    st.session_state.input_valor_formatado = ""
+  if "valor_numerico" not in st.session_state:
+    st.session_state.valor_numerico = 0.0
+
+  st.text_input(
       "Valor da despesa cartão (R$)",
-      min_value=0.01,
-      format="%.2f",
-      step=10.0,
-      value=0.01,
+      value=st.session_state.input_valor_formatado,
+      key="raw_valor",
+      on_change=formatar_moeda_input,
+      placeholder="Digite o valor (ex: 1550 para R$ 15,50)",
   )
+
+  valor = st.session_state.valor_numerico
 
   if "str_data_compra" not in st.session_state:
     st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
