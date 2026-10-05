@@ -3,6 +3,7 @@ from dateutil.relativedelta import relativedelta
 import calendar
 import psycopg2
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Configuração da página para dispositivos móveis
 st.set_page_config(
@@ -271,12 +272,18 @@ if menu == "💳 Faturas dos Cartões":
 elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
+  if "raw_valor" not in st.session_state:
+    st.session_state.raw_valor = ""
+  if "input_valor_formatado" not in st.session_state:
+    st.session_state.input_valor_formatado = "R$ 0,00"
+  if "valor_numerico" not in st.session_state:
+    st.session_state.valor_numerico = 0.0
 
-  # Função auxiliar para formatar o valor monetário enquanto o usuário digita
+
   def formatar_moeda_input():
     val_str = "".join(filter(str.isdigit, st.session_state.get("raw_valor", "")))
     if not val_str:
-      st.session_state.input_valor_formatado = ""
+      st.session_state.input_valor_formatado = "R$ 0,00"
       st.session_state.valor_numerico = 0.0
       return
     val_int = int(val_str)
@@ -287,13 +294,6 @@ elif menu == "➕ Nova Despesa":
     ).replace(".", ",").replace("X", ".")
 
 
-  if "raw_valor" not in st.session_state:
-    st.session_state.raw_valor = ""
-  if "input_valor_formatado" not in st.session_state:
-    st.session_state.input_valor_formatado = ""
-  if "valor_numerico" not in st.session_state:
-    st.session_state.valor_numerico = 0.0
-
   st.text_input(
       "Valor da despesa cartão (R$)",
       value=st.session_state.input_valor_formatado,
@@ -301,6 +301,19 @@ elif menu == "➕ Nova Despesa":
       on_change=formatar_moeda_input,
       placeholder="Digite o valor (ex: 1550 para R$ 15,50)",
   )
+
+  # Script JavaScript para garantir o foco automático imediato no campo de valor
+  focus_js = """
+    <script>
+        setTimeout(function() {
+            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            if (inputs.length > 0) {
+                inputs[0].focus();
+            }
+        }, 200);
+    </script>
+    """
+  components.html(focus_js, height=0)
 
   valor = st.session_state.valor_numerico
 
