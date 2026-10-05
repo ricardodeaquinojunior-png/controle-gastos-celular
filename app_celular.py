@@ -27,7 +27,7 @@ meses_pt = {
 }
 
 
-# Função de conexão inteligente (com suporte aos Secrets do Streamlit Cloud)
+# Função de conexão inteligente (com fallback direto para a sua string de conexão)
 def conectar_banco():
   try:
     if "supabase" in st.secrets:
@@ -42,7 +42,7 @@ def conectar_banco():
   except Exception:
     pass
 
-  # Fallback para conexão local direta
+  # Conexão direta padrão para funcionamento local imediato
   DATABASE_URL = "postgresql://postgres:gPAc6c9P+_ZV2u$@db.vihsucqqzeaestnynffz.supabase.co:5432/postgres"
   return psycopg2.connect(DATABASE_URL)
 
@@ -137,30 +137,18 @@ def calcular_ciclo_fatura(d_date, dia_fechamento):
   return inicio, fim
 
 
-# --- Cabeçalho e Menu Rápido ---
-st.title("💰 Novo Lançamento")
+# --- Menu de Navegação Superior ---
+st.title("💰 Meu Controle")
 
-with st.expander("⚙️ Outras Opções (Faturas / Sair)"):
-  menu_opcao = st.selectbox(
-      "Selecione:", ["➕ Nova Despesa", "💳 Faturas dos Cartões", "🚪 Sair"]
-  )
-  if menu_opcao == "🚪 Sair":
-    st.success(
-        "🚪 Sessão encerrada com sucesso! Já pode fechar esta aba do navegador."
-    )
-    st.stop()
-  elif menu_opcao == "💳 Faturas dos Cartões":
-    st.session_state.modo_faturas = True
-  else:
-    st.session_state.modo_faturas = False
-
+menu = st.radio(
+    "Navegação", ["💳 Faturas dos Cartões", "➕ Nova Despesa"], horizontal=True
+)
 st.divider()
 
 # ==========================================
-# MODO: FATURAS DOS CARTÕES
+# ABA 1: FATURAS DOS CARTÕES (Por Período)
 # ==========================================
-if st.session_state.get("modo_faturas", False):
-  st.subheader("💳 Faturas dos Cartões (Regra de Período)")
+if menu == "💳 Faturas dos Cartões":
   hoje = datetime.now()
   lista_meses_opcoes = []
   for i in range(-3, 4):
@@ -186,6 +174,9 @@ if st.session_state.get("modo_faturas", False):
       index=indice_atual,
       format_func=formatar_mes_pt,
   )
+
+  st.divider()
+  st.subheader("💳 Faturas dos Cartões (Regra de Período)")
 
   cartoes_dict, _ = carregar_cartoes()
   if cartoes_dict:
@@ -243,6 +234,7 @@ if st.session_state.get("modo_faturas", False):
               label=f"Cartão: {c_nome} ({periodo_txt})",
               value=f"R$ {info['total']:,.2f}",
           )
+
           with st.expander(f"🔍 Detalhes da fatura - {c_nome}"):
             if info["itens"]:
               itens_ordenados = sorted(
@@ -267,47 +259,50 @@ if st.session_state.get("modo_faturas", False):
           st.write("")
       else:
         st.info("Nenhuma fatura calculada para este período específico.")
+
     except Exception as e:
       st.error(f"Erro ao calcular faturas: {e}")
   else:
     st.info("Nenhum cartão cadastrado.")
 
 # ==========================================
-# MODO PADRÃO: NOVA DESPESA (Direto ao Ponto)
+# ABA 2: NOVA DESPESA CARTÃO
 # ==========================================
-else:
+elif menu == "➕ Nova Despesa":
   st.markdown("### 💳 Nova despesa cartão")
 
-  if "valor_real" not in st.session_state:
-    st.session_state.valor_real = 0.0
-  if "valor_str" not in st.session_state:
-    st.session_state.valor_str = ""
+
+  # Função auxiliar para formatar o valor monetário enquanto o usuário digita
+  def formatar_moeda_input():
+    val_str = "".join(filter(str.isdigit, st.session_state.get("raw_valor", "")))
+    if not val_str:
+      st.session_state.input_valor_formatado = ""
+      st.session_state.valor_numerico = 0.0
+      return
+    val_int = int(val_str)
+    val_float = val_int / 100.0
+    st.session_state.valor_numerico = val_float
+    st.session_state.input_valor_formatado = f"R$ {val_float:,.2f}".replace(
+        ",", "X"
+    ).replace(".", ",").replace("X", ".")
 
 
-  def atualizar_valor():
-    digitos = "".join(
-        filter(str.isdigit, st.session_state.get("campo_valor_input", ""))
-    )
-    if not digitos:
-      st.session_state.valor_real = 0.0
-      st.session_state.valor_str = ""
-    else:
-      num = int(digitos) / 100.0
-      st.session_state.valor_real = num
-      st.session_state.valor_str = (
-          f"R$ {num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-      )
-
+  if "raw_valor" not in st.session_state:
+    st.session_state.raw_valor = ""
+  if "input_valor_formatado" not in st.session_state:
+    st.session_state.input_valor_formatado = ""
+  if "valor_numerico" not in st.session_state:
+    st.session_state.valor_numerico = 0.0
 
   st.text_input(
       "Valor da despesa cartão (R$)",
-      value=st.session_state.valor_str,
-      key="campo_valor_input",
-      on_change=atualizar_valor,
-      placeholder="Digite apenas os números (ex: 1550 para R$ 15,50)",
+      value=st.session_state.input_valor_formatado,
+      key="raw_valor",
+      on_change=formatar_moeda_input,
+      placeholder="Digite o valor (ex: 1550 para R$ 15,50)",
   )
 
-  valor = st.session_state.valor_real
+  valor = st.session_state.valor_numerico
 
   if "str_data_compra" not in st.session_state:
     st.session_state.str_data_compra = datetime.now().strftime("%d/%m/%Y")
@@ -364,6 +359,15 @@ else:
   )
   id_sub = subs_dict.get(sub_selecionada) if sub_selecionada else None
 
+  parcelado = st.checkbox("🔁 Despesa Parcelada")
+  qtd_parcelas = 1
+  if parcelado:
+    qtd_parcelas = st.selectbox(
+        "Número de parcelas",
+        options=list(range(2, 13)),
+        format_func=lambda x: f"{x}x",
+    )
+
   st.divider()
 
   if st.button("✔ Cadastrar Despesa", type="primary", use_container_width=True):
@@ -382,22 +386,46 @@ else:
         cursor = conn.cursor()
         desc_base = descricao.strip()
 
-        cursor.execute(
-            """
-                    INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
-                    VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
-                """,
-            (
-                valor,
-                data_compra.strftime("%Y-%m-%d"),
-                desc_base,
-                id_cat,
-                id_sub,
-                id_cartao,
-                1,
-            ),
-        )
-        st.success("✔ Despesa de cartão cadastrada com sucesso!")
+        if parcelado:
+          valor_parcela = valor / qtd_parcelas
+          for i in range(qtd_parcelas):
+            data_parcela = data_compra + relativedelta(months=i)
+            desc_parcela = f"{desc_base} ({i+1}/{qtd_parcelas})"
+            cursor.execute(
+                """
+                            INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
+                            VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
+                        """,
+                (
+                    valor_parcela,
+                    data_parcela.strftime("%Y-%m-%d"),
+                    desc_parcela,
+                    id_cat,
+                    id_sub,
+                    id_cartao,
+                    qtd_parcelas,
+                ),
+            )
+          st.success(
+              f"Despesa parcelada em {qtd_parcelas}x cadastrada com sucesso!"
+          )
+        else:
+          cursor.execute(
+              """
+                        INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
+                        VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
+                    """,
+              (
+                  valor,
+                  data_compra.strftime("%Y-%m-%d"),
+                  desc_base,
+                  id_cat,
+                  id_sub,
+                  id_cartao,
+                  1,
+              ),
+          )
+          st.success("✔ Despesa de cartão cadastrada com sucesso!")
 
         conn.commit()
         cursor.close()
