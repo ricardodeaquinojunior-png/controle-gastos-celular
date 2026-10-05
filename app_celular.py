@@ -153,8 +153,7 @@ st.divider()
 # ==========================================
 if menu == "🚪 Sair":
   st.success(
-      "🚪 Sessão encerrada com sucesso! Você já pode fechar esta aba do"
-      " navegador."
+      "🚪 Sessão encerrada com sucesso! Já pode fechar esta aba do navegador."
   )
   st.stop()
 
@@ -316,8 +315,10 @@ elif menu == "➕ Nova Despesa":
 
   val_componente = components.html(money_input_html, height=60)
 
-  if "valor_numerico" not in st.session_state:
-    st.session_state.valor_numerico = 0.0
+  if val_componente is not None and isinstance(val_componente, (int, float)):
+    if st.session_state.valor_numerico != float(val_componente):
+      st.session_state.valor_numerico = float(val_componente)
+      st.rerun()
 
   valor = st.session_state.valor_numerico
 
@@ -376,15 +377,6 @@ elif menu == "➕ Nova Despesa":
   )
   id_sub = subs_dict.get(sub_selecionada) if sub_selecionada else None
 
-  parcelado = st.checkbox("🔁 Despesa Parcelada")
-  qtd_parcelas = 1
-  if parcelado:
-    qtd_parcelas = st.selectbox(
-        "Número de parcelas",
-        options=list(range(2, 13)),
-        format_func=lambda x: f"{x}x",
-    )
-
   st.divider()
 
   if st.button("✔ Cadastrar Despesa", type="primary", use_container_width=True):
@@ -403,46 +395,22 @@ elif menu == "➕ Nova Despesa":
         cursor = conn.cursor()
         desc_base = descricao.strip()
 
-        if parcelado:
-          valor_parcela = valor / qtd_parcelas
-          for i in range(qtd_parcelas):
-            data_parcela = data_compra + relativedelta(months=i)
-            desc_parcela = f"{desc_base} ({i+1}/{qtd_parcelas})"
-            cursor.execute(
-                """
-                            INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
-                            VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
-                        """,
-                (
-                    valor_parcela,
-                    data_parcela.strftime("%Y-%m-%d"),
-                    desc_parcela,
-                    id_cat,
-                    id_sub,
-                    id_cartao,
-                    qtd_parcelas,
-                ),
-            )
-          st.success(
-              f"Despesa parcelada em {qtd_parcelas}x cadastrada com sucesso!"
-          )
-        else:
-          cursor.execute(
-              """
-                        INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
-                        VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
-                    """,
-              (
-                  valor,
-                  data_compra.strftime("%Y-%m-%d"),
-                  desc_base,
-                  id_cat,
-                  id_sub,
-                  id_cartao,
-                  1,
-              ),
-          )
-          st.success("✔ Despesa de cartão cadastrada com sucesso!")
+        cursor.execute(
+            """
+                    INSERT INTO lancamentos (tipo, valor, recebido, data_lancamento, descricao, id_categoria, id_subcategoria, id_cartao, repeticoes)
+                    VALUES ('Despesa', %s, FALSE, %s, %s, %s, %s, %s, %s);
+                """,
+            (
+                valor,
+                data_compra.strftime("%Y-%m-%d"),
+                desc_base,
+                id_cat,
+                id_sub,
+                id_cartao,
+                1,
+            ),
+        )
+        st.success("✔ Despesa de cartão cadastrada com sucesso!")
 
         conn.commit()
         cursor.close()
